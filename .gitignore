@@ -1,0 +1,9 @@
+installed.txt
+
+.vscode/
+build/
+dist/
+*.pyc
+spinqit.egg-info/
+**/__pycache__
+**/.DS_Store

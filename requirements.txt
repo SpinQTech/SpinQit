@@ -1,0 +1,13 @@
+antlr4-python3-runtime==4.9.2
+matplotlib>=3.5
+numpy
+psutil==5.9.1
+pybind11==2.9.2
+pycryptodome==3.11.0
+python-constraint==1.4.0
+python-igraph==0.9.10
+requests
+retworkx
+scipy
+torch
+autograd
