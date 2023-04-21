@@ -12,8 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from spinqkit import get_basic_simulator, get_compiler, Circuit, BasicSimulatorConfig
-from spinqkit import H, CX, Rx
+from spinqit import get_basic_simulator, get_compiler, Circuit, BasicSimulatorConfig
+from spinqit import H, CX, Rx
 from math import pi
 
 engine = get_basic_simulator()
