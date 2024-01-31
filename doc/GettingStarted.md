@@ -1914,7 +1914,7 @@ dataset = [2, 3, 1, 4, 5, 6, 7, 15]
 seed = 330
 max_searcher = QSearching(seed=seed)
 max_idx = max_searcher.search(dataset, show=False)
-min_searcher = QSearching(find='min', seed=seed)
+min_searcher = QSearching(objective='min', seed=seed)
 min_idx = min_searcher.search(dataset, show=False)
 print(max_idx, min_idx)
 ```
