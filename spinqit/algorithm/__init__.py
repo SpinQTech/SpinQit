@@ -19,5 +19,8 @@ from .quantum_counting import QuantumCounting
 from .optimizer import *
 from .shor import Shor
 from .grover_seach import QSearching
-from .torch_interface import QuantumModel, QuantumFunction
-from .expval import ExpvalCost
+from .amplitude_estimation import AmplitudeEstimation
+from .iterative_amplitude_estimation import IterativeAmplitudeEstimation
+from .ml_amplitude_estimation import MaximumLikelihoodAmplitudeEstimation
+from .qsvc import QSVC
+from .coined_quantum_walk import CoinedQuantumWalk

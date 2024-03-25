@@ -29,4 +29,3 @@ solver = HHL(mat, vec)
 solver.run(engine, config)
 print(solver.get_state())
 print(solver.get_measurements())
-

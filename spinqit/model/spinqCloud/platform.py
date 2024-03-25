@@ -63,7 +63,7 @@ class Platform():
         p_dict["coupling_map"] = self._coupling_map
         return json.dumps(p_dict)
 
-Gemini = Platform("gemini_vp", "2Qubit小型核磁量子计算机", 2, 0, [H, X, Y, Z, X90, Y90, Z90, Rx, Ry, Rz, CNOT, YCON, ZCON, Barrier, U], [(1, 2), (2, 1)])
+Gemini = Platform("gemini_vp", "2Qubit小型核磁量子计算机", 2, 0, [H, I, X, Y, Z, X90, Y90, Z90, Rx, Ry, Rz, CNOT, YCON, ZCON, Barrier, U], [(1, 2), (2, 1)])
 Triangulum = Platform("triangulum_vp", "3Qubit核磁量子计算机", 3, 0, [H, I, X, Y, Z, U, Rx, Ry, Rz, T, Td, X90, Y90, Z90, Barrier, CNOT, ZCON, CCX], [(1, 2), (2, 1), (2, 3), (3, 2), (3, 1), (1, 3)])
 Superconductor = Platform("superconductor_vp", "8Qubit超导量子计算机", 8, 0, [H, X, Y, Z, X90, Y90, Z90, Rx, Ry, Rz, ZCON, T, S, Barrier, X90dg, Y90dg, Z90dg, I, U], [(1, 2), (2, 1), (2, 3), (3, 2), (3, 4), (4, 3), (4, 5), (5, 4), (5, 6), (6, 5), (6, 7), (7, 6), (7, 8), (8, 7)])
 

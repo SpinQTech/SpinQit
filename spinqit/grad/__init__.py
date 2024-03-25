@@ -12,5 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from .param_shift import parameter_shift
-from .adjoint_differentiation import adjoint_differentiation
+from .spinq_grad import grad_func as grad_func_spinq
+from .torch_grad import grad_func as grad_func_torch
+from .hardware_grad import grad_func as grad_func_hardware
+from ._grad import *
+

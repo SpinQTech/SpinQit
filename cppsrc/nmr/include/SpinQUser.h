@@ -1,5 +1,5 @@
-/**
- * Copyright 2021 SpinQ Technology Co., Ltd.
+﻿/**
+ * Copyright 2023 SpinQ Technology Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,10 @@
 
 #ifndef SPINQUSER_HH
 #define SPINQUSER_HH
+
+/*  To use this exported function of dll, include this header
+ *  in your project.
+ */
 
 #ifdef BUILD_SPINQINTERFACE_DLL
     #define SPINQ_API __declspec(dllexport)
@@ -34,6 +38,9 @@ extern "C"
 
 SPINQ_API int request_login(const char* account, const char* password);
 SPINQ_API void set_login_response_callback(void (*func)(const char*));
+
+SPINQ_API int request_logout(const char* account);
+SPINQ_API void set_logout_response_callback(void (*func)(const char*));
 
 SPINQ_API int request_pull_tasks(int page_index, const char* state);
 SPINQ_API void set_pull_tasks_response_callback(void (*func)(const char*));

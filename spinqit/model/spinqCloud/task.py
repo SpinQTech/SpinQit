@@ -154,7 +154,6 @@ class Task:
         count = 0
         while (timeout is None or datetime.datetime.now() < end_time):
             count = count + 1
-            # print("Check result " + str(count) + " times.")
             try:
                 res = self._get_result()
                 return res

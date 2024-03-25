@@ -38,4 +38,11 @@ pybind11_add_module(spinq_backends ${SOURCES})
 target_include_directories(spinq_backends PRIVATE "${CMAKE_CURRENT_LIST_DIR}/cppsrc/include"
 				               "${CMAKE_CURRENT_LIST_DIR}/cppsrc/basic_simulator/include"
 				               "${CMAKE_CURRENT_LIST_DIR}/cppsrc/nmr/include")
+
+set_target_properties(spinq_backends PROPERTIES 
+                      BUILD_WITH_INSTALL_RPATH TRUE 
+                      INSTALL_RPATH "\$ORIGIN"
+                      BUILD_RPATH "\$ORIGIN"
+                      )
+
 target_link_libraries(spinq_backends PRIVATE spinq-simulator)

@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import setuptools
+# import setuptools
 import os
 import re
 import sys
@@ -24,6 +24,7 @@ from distutils.version import LooseVersion
 from setuptools import setup, find_packages, Extension
 from setuptools.command.build_ext import build_ext
 from glob import glob
+
 
 class CMakeExtension(Extension):
     def __init__(self, name, sourcedir=''):
@@ -82,29 +83,43 @@ class CMakeBuild(build_ext):
                               cwd=self.build_temp)
 
 date_files_list = []
+final_place = ''
+if sys.argv[1] in ['install', 'bdist_egg']:
+    final_place = 'spinqit'
+
 if platform.system() == 'Windows':
-    final_place = ''
-    if sys.argv[1] in ['install', 'bdist_egg']:
-        final_place = 'spinqit'
-    date_files_list = [(final_place, ['cppsrc/lib/SpinQInterface.dll'])]
+    date_files_list = [(final_place, ['cppsrc/lib/SpinQInterface_win_x86_64.dll'])]
+elif platform.system() == 'Linux':
+    date_files_list = [(final_place, ['cppsrc/lib/libSpinQInterface_linux_x86_64.so'])]
+elif platform.system() == 'Darwin':
+    if final_place == '':
+        final_place = 'lib'
+    if platform.machine() == 'x86_64':
+        date_files_list = [(final_place, ['cppsrc/lib/libSpinQInterface_darwin_x86_64.dylib'])]
+    elif platform.machine() == 'arm64':
+        date_files_list = [(final_place, ['cppsrc/lib/libSpinQInterface_darwin_arm_64.dylib'])]
+
+package_data_files = ['compiler/qasm/include/qelib1.inc']
+if platform.system() == 'Linux':
+    package_data_files.append('../cppsrc/lib/libSpinQInterface_linux_x86_64.so')
 
 setup(
     name="spinqit",
-    version="0.1.0",
+    version="0.2.2",
     description="SpinQ Quantum Software Development Kit",
     packages=find_packages(),
     classifiers=[
-        'Development Status :: 5 - Production/Stable',
+        'Development Status :: 4 - Beta',
         "Programming Language :: Python :: 3",
         "Operating System :: Microsoft :: Windows",
         "Operating System :: POSIX :: Linux",
         "Operating System :: MacOS"
     ],
     ext_modules=[CMakeExtension('spinqit.spinq_backends')],
-    install_requires=['numpy', 'scipy', 'torch', 'autograd', 'psutil', 'retworkx', 'python-igraph==0.9.10', 'pybind11', 'antlr4-python3-runtime==4.9.2', 'python-constraint', 'requests', 'matplotlib>=3.5', 'pycryptodome==3.11.0'],
+    install_requires=['numpy', 'scipy', 'scikit-learn', 'torch', 'autograd==1.5.0', 'psutil', 'retworkx', 'python-igraph==0.9.10', 'pybind11', 'antlr4-python3-runtime==4.9.2', 'python-constraint', 'requests', 'matplotlib>=3.5', 'pycryptodome==3.11.0', 'autoray==0.6.1', 'noisyopt==0.2.2', 'sympy'],
     python_requires='>=3.8',
     cmdclass=dict(build_ext=CMakeBuild),
-    package_data={'spinqit': ['compiler/qasm/include/qelib1.inc']},
+    package_data={'spinqit': package_data_files},
     data_files=date_files_list,
     zip_safe=False
 )

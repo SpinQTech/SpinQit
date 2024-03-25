@@ -11,7 +11,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from spinqit import get_basic_simulator, get_compiler, Circuit, BasicSimulatorConfig
+from spinqit import get_compiler, Circuit
+from spinqit import get_torch_simulator, TorchSimulatorConfig
 from spinqit import AmplitudeAmplification, GateBuilder, RepeatBuilder
 from spinqit import H, X, Z
 from spinqit.primitive import MultiControlledGateBuilder
@@ -38,11 +39,11 @@ grover = AmplitudeAmplification(oracle_builder.to_gate(), q)
 circ.extend(grover.build())
 
 # Set up the backend and the compiler
-engine = get_basic_simulator()
+engine = get_torch_simulator()
 comp = get_compiler("native")
 optimization_level = 0
 exe = comp.compile(circ, optimization_level)
-config = BasicSimulatorConfig()
+config = TorchSimulatorConfig()
 config.configure_shots(1024)
 
 # Run

@@ -25,3 +25,18 @@ def get_compiler(option: str = 'native') -> Compiler:
     elif option == 'qiskit':
         return QiskitCompiler()
     return NativeCompiler()
+
+
+def compiler(option, optimization_level=0):
+    c = get_compiler(option)
+
+    def wrapper(fn):
+        def new_fn(*args, **kwargs):
+            circuit = fn(*args, **kwargs)
+            Ir = c.compile(circuit, optimization_level)
+            setattr(Ir, 'place_holder', getattr(circuit, 'place_holder', ()))
+            return Ir
+
+        return new_fn
+
+    return wrapper

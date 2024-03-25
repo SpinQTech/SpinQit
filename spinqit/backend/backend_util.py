@@ -69,9 +69,25 @@ def _add_pauli_gate(gate, qubits, ir):
         ilist = decompose_multi_qubit_gate(gate, qubits)
     idx = _check_ir_measure(ir)
     idx = idx if idx is not False else ir.dag.vcount()
+    node_idx_list = []
     if idx == ir.dag.vcount():
-        ir.insert_nodes([(inst, inst.qubits) for inst in ilist], [idx], 0)
+        seq = ir.dag.vs.select(lambda x: len(x.out_edges()) != len(x.in_edges()) and x['type'] != 4)
+        node_map = {}
+        for v in seq:
+            if v['qubits'] is None:
+                _qubits = [int(v['name'].split('_')[-1])]
+            else:
+                _qubits = v['qubits']
+            for q in _qubits:
+                node_map[q] = v.index
+        for inst in ilist:
+            node_idx = ir.add_op_node(inst.gate.label, inst.params, inst.qubits, inst.clbits)
+            prev_node_idx = node_map[ir.dag.vs[node_idx]['qubits'][0]]
+            ir.dag.add_edge(prev_node_idx, node_idx, )
+            node_idx_list.append(node_idx)
+        return node_idx_list
     else:
-
-        ir.substitute_nodes([idx], ilist, 0)
+        node_idx_list = ir.substitute_nodes([idx], ilist, 0)
         ir.remove_nodes([idx])
+        return node_idx_list
+

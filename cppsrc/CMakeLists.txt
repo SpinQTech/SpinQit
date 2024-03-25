@@ -44,7 +44,7 @@ elseif(CMAKE_HOST_APPLE AND (CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL "arm64"))
 else()
     FIND_LIBRARY(CORE_LIB NAMES simulator-core HINTS ${CMAKE_CURRENT_LIST_DIR}/lib REQUIRED)
 endif()
-message("simulator-core find at ${CORE_LIB}")
+message("simulator-core found at ${CORE_LIB}")
 
 if(CMAKE_HOST_APPLE AND (CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL "x86_64"))
     FIND_LIBRARY(IGRAPH_LIB NAMES igraph HINTS ${CMAKE_CURRENT_LIST_DIR}/lib/mac_x86_64 REQUIRED)
@@ -53,11 +53,18 @@ elseif(CMAKE_HOST_APPLE AND (CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL "arm64"))
 else()
     FIND_LIBRARY(IGRAPH_LIB NAMES igraph HINTS ${CMAKE_CURRENT_LIST_DIR}/lib REQUIRED) 
 endif()
-message("igraph find at ${IGRAPH_LIB}")
+message("igraph found at ${IGRAPH_LIB}")
 
 if (CMAKE_HOST_WIN32)
-    FIND_LIBRARY(QUASAR_LIB NAMES SpinQInterface HINTS ${CMAKE_CURRENT_LIST_DIR}/lib REQUIRED)
+    FIND_LIBRARY(QUASAR_LIB NAMES SpinQInterface_win_x86_64 HINTS ${CMAKE_CURRENT_LIST_DIR}/lib REQUIRED)
+elseif (CMAKE_HOST_APPLE AND (CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL "x86_64"))
+    FIND_LIBRARY(QUASAR_LIB NAMES SpinQInterface_darwin_x86_64 HINTS ${CMAKE_CURRENT_LIST_DIR}/lib REQUIRED)
+elseif (CMAKE_HOST_APPLE AND (CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL "arm64"))
+    FIND_LIBRARY(QUASAR_LIB NAMES SpinQInterface_darwin_arm_64 HINTS ${CMAKE_CURRENT_LIST_DIR}/lib REQUIRED)
+elseif (CMAKE_HOST_UNIX)
+    FIND_LIBRARY(QUASAR_LIB NAMES SpinQInterface_linux_x86_64 HINTS ${CMAKE_CURRENT_LIST_DIR}/lib REQUIRED)
 endif ()
+message("SpinQInterface found at ${QUASAR_LIB}")
 
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads REQUIRED)
@@ -74,18 +81,17 @@ target_include_directories(spinq-simulator PUBLIC ${CMAKE_CURRENT_LIST_DIR}/basi
                                                   ${CMAKE_CURRENT_LIST_DIR}/include
                                                   ${PYTHON_INCLUDE_DIRS}
                                                   ${PYBIND_INCLUDE_DIRS})
-if (CMAKE_HOST_WIN32)
-    target_link_libraries(spinq-simulator PUBLIC
-                          ${CORE_LIB} 
-                          ${IGRAPH_LIB}                      
-	                      ${QUASAR_LIB}
-                          Threads::Threads
-                         )
-else()
-    target_link_libraries(spinq-simulator PUBLIC
-                           ${CORE_LIB} 
-                           ${IGRAPH_LIB}                     
-                           Threads::Threads
-                          )
-endif()
+
+set_target_properties(spinq-simulator PROPERTIES 
+                     BUILD_WITH_INSTALL_RPATH TRUE 
+                     INSTALL_RPATH "\$ORIGIN"
+                     BUILD_RPATH "\$ORIGIN"
+                     )
+                                              
+target_link_libraries(spinq-simulator PUBLIC
+                        ${CORE_LIB} 
+                        ${IGRAPH_LIB}                      
+                        ${QUASAR_LIB}
+                        Threads::Threads
+                        )
 

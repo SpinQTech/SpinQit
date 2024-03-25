@@ -14,7 +14,7 @@
 
 from typing import List, Callable
 from igraph import *
-from spinqit.model import I, H, X, Y, Z, Rx, Ry, Rz, T, Td, S, Sd, P, CX, CY, CZ, SWAP, CCX, U, MEASURE
+from spinqit.model import I, H, X, Y, Z, Rx, Ry, Rz, T, Td, S, Sd, P, CX, CY, CZ, SWAP, CCX, U, MEASURE, StateVector
 from spinqit.model import Instruction, Gate
 import enum
 import numpy as np
@@ -38,14 +38,11 @@ class Comparator(enum.Enum):
     GE = 5
 
 class IntermediateRepresentation():
-    basis_set = {I, H, X, Y, Z, Rx, Ry, Rz, T, Td, S, Sd, P, CX, CY, CZ, SWAP, CCX, MEASURE} 
+    basis_set = {I, H, X, Y, Z, Rx, Ry, Rz, T, Td, S, Sd, P, CX, CY, CZ, SWAP, CCX, MEASURE, StateVector}
     label_set = {g.label for g in basis_set}
     basis_map = {}
     for gate in basis_set:
         basis_map[gate.label] = gate
-    # basis_map = {'id': I, 'h': H, 'x': X, 'y': Y, 'z': Z, 'rx': Rx, 'ry': Ry, 'rz': Rz, 't': T, 'tdg': Td, 's': S,
-    #              'sdg': Sd, 'p': P, 'cx': CX, 'cy': CY, 'cz': CZ, 'swap': SWAP, 'ccx': CCX, 'u': U, 'measure': MEASURE,
-    #              'cnot': CX}
 
     @classmethod
     def get_basis_gate(cls, name: str) -> Gate:
@@ -64,7 +61,11 @@ class IntermediateRepresentation():
             return CCX
         elif name == 'U':
             return U
-    
+        else:
+            raise ValueError(
+                f'The gate {name} are not a basis gate in IR'
+            )
+
     def __init__(self):
         self.dag = Graph(directed=True)
         self.qnum = 0
@@ -126,6 +127,7 @@ class IntermediateRepresentation():
         self.dag.vs[index]['type'] = NodeType.op.value
         self.dag.vs[index]['name'] = gatename
         self.dag.vs[index]['qubits'] = qubits
+        
         if params is not None and len(params) > 0:
             self.dag.vs[index]['params'] = params
 

@@ -18,8 +18,9 @@ from .pauli_builder import PauliBuilder
 from .reciprocal import Reciprocal
 from .vector_encoding import amplitude_encoding, angle_encoding, iqp_encoding
 from .power import generate_power_gate
-from .pauli_expectation import calculate_pauli_expectation, generate_hamiltonian_matrix
-from .amplitude_estimation import AmplitudeEstimation
+from .pauli_expectation import calculate_pauli_expectation, generate_hamiltonian_matrix, pauli_decompose
+from .ae_Q_builder import QOperatorBuilder
 from .multi_controlled_gate_builder import MultiControlledGateBuilder
 from .uniformly_controlled_gate_builder import UniformlyControlledGateBuilder
 from .two_qubit_state_preparation import TwoQubitStatePreparationGateBuilder
+from .tapering import taper_off_qubits, generate_symmetry_generator, generate_sector

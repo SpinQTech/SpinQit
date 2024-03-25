@@ -14,13 +14,13 @@
 
 from .exceptions import *
 from .circuit import Circuit
-from .parameter import Parameter
+from .parameter import Parameter, PlaceHolder
 from .register import QuantumRegister
 from .instruction import Instruction
 from .basic_gate import Gate, GateBuilder
 from .matrix_gate import MatrixGate, MatrixGateBuilder, MultiControlledMatrixGate, MultiControlledMatrixGateBuilder
-from .inverse_builder import InverseBuilder, InverseGate
+from .inverse_builder import *
 from .controlled_gate import ControlledGate
 from .repeat import RepeatBuilder
 from .multi_control_phase_gate import MultiControlPhaseGateBuilder
-from .gates import I, H, X, Y, Z, Rx, Ry, Rz, P, T, Td, S, Sd, CX, CNOT, CY, CZ, CP, SWAP, CCX, U, Ph, CSWAP, MEASURE, BARRIER
+from .gates import I, H, X, Y, Z, Rx, Ry, Rz, P, T, Td, S, Sd, CX, CNOT, CY, CZ, CP, SWAP, CCX, U, Ph, CSWAP, MEASURE, BARRIER, StateVector

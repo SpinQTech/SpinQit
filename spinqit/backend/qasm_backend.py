@@ -11,19 +11,22 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import functools
 from collections import defaultdict
 from copy import deepcopy
 
-import numpy as np
+import numpy as onp
 from scipy import sparse
 
 from spinqit import CP
-from spinqit.grad import parameter_shift, adjoint_differentiation
 from spinqit.compiler.ir import NodeType
 
 from .backend_util import _add_pauli_gate
+from ..model.parameter import LazyParameter
 from ..primitive import PauliBuilder, calculate_pauli_expectation
-from ..utils.function import _flatten
+from ..utils.function import _flatten, requires_grad
+from autoray import numpy as ar
+from spinqit.grad import grad_func_spinq
 
 comparator_map = {
     0: '==',
@@ -56,26 +59,40 @@ class QasmConfig:
 
 class QiskitQasmResult:
     def __init__(self, ):
-        self.counts = {}
-        self.states = np.array([])
-        self.probabilities = {}
+        self.states = onp.array([])
+        # For lazy evaluation
+        self.counts_fn = None
+        self.probabilities_fn = None
 
     def __str__(self):
         return f'Counts: {self.counts}, States: {self.states}, Prob: {self.probabilities}'
 
     def set_result(self, res, shots):
         if isinstance(res, dict):
-            self.counts = {k[::-1]: v for k, v in res.items()}
-            self.probabilities = {k: v / shots for k, v in self.counts.items()}
+            self.counts_fn = lambda: {k[::-1]: v for k, v in res.items()}
+            self.probabilities_fn = lambda: {k: v / shots for k, v in self.counts.items()}
         else:
-            self.states = res.reshape([2] * int(np.log2(res.shape[0]))).T.reshape(-1)
-            np_states = np.abs(res) ** 2
-            for i, v in enumerate(np_states):
-                self.probabilities[(bin(i)[2:])] = v
-            self.counts = {k: v * shots for k, v in self.probabilities.items()}
+            self.states = res.reshape([2] * int(onp.log2(res.shape[0]))).T.reshape(-1).tolist()
+
+            def prob_fn():
+                np_states = onp.abs(res) ** 2
+                prob = {}
+                for i, v in enumerate(np_states):
+                    prob[(bin(i)[2:])] = v
+                return prob
+            self.probabilities_fn = prob_fn
+            self.counts_fn = lambda: {k: v * shots for k, v in self.probabilities.items()}
+
+    @property
+    def counts(self):
+        return self.counts_fn()
+
+    @property
+    def probabilities(self):
+        return self.probabilities_fn()
 
     def get_random_reading(self):
-        return np.random.choice(list(self.counts.keys()))
+        return onp.random.choice(list(self.counts.keys()))
 
 
 class QasmBackend:
@@ -91,57 +108,112 @@ class QasmBackend:
         self.executor = fn
         # self.result = QasmResult()
 
-    def execute(self, ir, config, state=None, params=None):
+    def execute(self, ir, config):
         shots = config.shots
-        self.update_param(ir, params)
         qasm_str = self.convert_ir_to_qasm(ir)
         res = self.executor(qasm_str, shots)
         return res
 
-    def expval(self, ir, config, hamiltonian, state=None, params=None):
-        value = 0.0
-        if isinstance(hamiltonian, (np.ndarray, sparse.csr_matrix)):
-            psi = self.execute(ir, config, state=state, params=params).states
-            if not psi.tolist():
-                raise ValueError(
-                    f'The state is empty, may not use `type:{type(hamiltonian)}` hamiltonian. '
-                    f'Instead use `type:list` hamiltonian.'
-                )
-            value = np.real(psi.conj() @ hamiltonian @ psi)
-        elif isinstance(hamiltonian, list):
+    @staticmethod
+    def process_params(new_params, ):
+        execute_params = []
+        for param in new_params:
+            execute_params.append(ar.asarray(param, like='spinq', trainable=requires_grad(param)))
+        return execute_params
+
+    @functools.lru_cache
+    def check_node(self, ir, place_holder):
+
+        if place_holder is not None:
+            for v in ir.dag.vs:
+                if v['type'] in [0, 1] and 'params' in v.attributes() and v['params'] is not None \
+                        and any(isinstance(p, LazyParameter) for p in v['params']):
+                    params = v['params']
+                    record_function = []
+                    for p in params:
+                        if isinstance(p, LazyParameter):
+                            record_function.append(p.get_function(place_holder))
+                        else:
+                            record_function.append(p)
+                    v['func'] = record_function if len(record_function) > 0 else None
+
+    def get_value_and_grad_fn(self, ir, config, measure_op=None, place_holder=None, grad_method=None):
+        def value_and_grad_fn(params):
+            params_for_grad = self.process_params(params)
+            self.check_node(ir, place_holder)
+            self.update_param(ir, params_for_grad)
+            val, res = self.evaluate(ir, config, measure_op)
+            backward_fn = grad_func_spinq(deepcopy(ir), params_for_grad, config, self, measure_op, res, grad_method)
+            return val, backward_fn
+
+        return value_and_grad_fn
+
+    def evaluate(self, ir, config, measure_op):
+        if measure_op is None:
+            raise ValueError(
+                'The measure_op should not be None.'
+            )
+        if isinstance(measure_op.hamiltonian, list):
+            value = 0.0
+            hamiltonian = measure_op.hamiltonian
             mqubits = config.mqubits if config.mqubits is not None else list(range(ir.qnum))
             for i, (pstr, coeff) in enumerate(hamiltonian):
                 h_part = PauliBuilder(pstr).to_gate()
-                execute_ir = deepcopy(ir)
-                _add_pauli_gate(h_part, mqubits, execute_ir)
-                result = self.execute(execute_ir, config, state=state, params=params)
+                node_idx = _add_pauli_gate(h_part, mqubits, ir)
+                result = self.execute(ir, config)
+                ir.remove_nodes(node_idx)
                 value += coeff * calculate_pauli_expectation(pstr, result.probabilities)
-        return value
-
-    def grads(self, ir, params, hamiltonian, config, method, state=None):
-        if method == 'backprop':
-            raise ValueError(f'The `backprop` method are not supported on the {self.__class__.__name__}.'
-                             'Choose other method or use `TorchSimulatorBackend`')
-        if method == 'param_shift':
-            grad_func = parameter_shift
-        elif method == 'adjoint_differentiation':
-            if isinstance(hamiltonian, list):
-                raise ValueError(
-                    f'The hamiltonian is `type:{type(hamiltonian)}`, '
-                    f'may use `spinqit.generate_hamiltonian_matrix`'
-                )
-            grad_func = adjoint_differentiation
+            return value, None
         else:
-            raise ValueError(f'The method `{method}` are not supported for {self.__class__.__name__} now')
-        loss, grads = grad_func(ir, config, params, hamiltonian, self, state)
-        return loss, grads
+            if measure_op.mqubits is not None:
+                config.configure_measure_qubits(measure_op.mqubits)
+            res = self.execute(ir, config)
+            if measure_op.mtype == 'expval':
+                hamiltonian = measure_op.hamiltonian
+                if not isinstance(hamiltonian, (onp.ndarray, sparse.csr_matrix)):
+                    raise ValueError(
+                        f'The hamiltonian type is wrong. '
+                        f'Expected `np.ndarray, sparse.csr_matrix, list`, but got `{type(hamiltonian)}`'
+                    )
+                psi = onp.array(res.states)
+                value = onp.real(psi.conj() @ hamiltonian @ psi)
+            elif measure_op.mtype == 'prob':
+                if 'mqubits' in config.metadata:
+                    np_probs = onp.zeros(2 ** (len(config.metadata['mqubits'])))
+                else:
+                    np_probs = onp.zeros(2 ** ir.qnum, dtype=float)
+                for k, v in res.probabilities.items():
+                    idx = int(k, 2)
+                    np_probs[idx] = v
+                value = np_probs
+
+            elif measure_op.mtype == 'count':
+                value = res.counts
+            elif measure_op.mtype == 'state':
+                value = onp.array(res.states)
+            else:
+                raise ValueError(
+                    f'The wrong measure_op.mtype expected `prob`, `expval`, `count`, `state`, but got {measure_op.mtype}'
+                )
+            return value, res
 
     @staticmethod
     def update_param(ir, new_params):
-        for v in ir.dag.vs:
-            if 'trainable' in v.attributes() and not (not v['trainable']):
-                func = v['trainable']
-                v['params'] = list(_flatten((func(new_params).tolist(),)))
+        """
+        Updating the trainable params
+        """
+        if new_params is not None:
+            for v in ir.dag.vs:
+                if 'func' in v.attributes() and v['func'] is not None:
+                    func = v['func']
+                    _params = []
+                    for f in func:
+                        if callable(f):
+                            _p = f(new_params)
+                        else:
+                            _p = f
+                        _params.append(_p)
+                    v['params'] = _params
 
     @staticmethod
     def convert_ir_to_qasm(ir):
@@ -270,4 +342,4 @@ class QasmBackend:
 
     @staticmethod
     def save_file(qasm_str, file_name):
-        np.savetxt(fname=file_name, X=qasm_str)
+        onp.savetxt(fname=file_name, X=qasm_str)

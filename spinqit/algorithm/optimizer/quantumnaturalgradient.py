@@ -12,58 +12,94 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import time
-
 import numpy as np
-from autograd import grad as _grad
 
-from spinqit.algorithm.optimizer import Optimizer
+from .optimizer import Optimizer
+from .utils import optimizer_timer
+from ..loss import probs
+from spinqit.grad._grad import qgrad
 from spinqit.model import Circuit, Instruction
 from spinqit.compiler.ir import IntermediateRepresentation as IR
-from spinqit.primitive import PauliBuilder, calculate_pauli_expectation
+from spinqit.model.parameter import Parameter
+from spinqit.primitive import PauliBuilder
+from spinqit.utils.function import _topological_sort, requires_grad
+from copy import deepcopy
 
 
-def fubini_tensor(expval_fn, params):
-    """
-    For now, the function only supports the 'diag' approximation.
-    """
+def fubini_tensor(qlayer, *params):
 
-    def convert_ob(qubit, pstr):
-        h_part = PauliBuilder(pstr).to_gate()
-        temp_circ << (h_part, qubit)
-        expval_fn.update_backend_config(qubits=qubit)
-        result = expval_fn.execute(temp_circ)
-        value = calculate_pauli_expectation('Z', result.probabilities)
-        temp_circ.instructions.pop()
-        return (1 - value * value) / 4
+    # def convert_ob(qubit, pstr, eigval, coeff):
+    #     measure = probs(mqubits=qubit)
+    #     if pstr == 'P':
+    #         probabilities = backend.evaluate(qlayer.compile_circuit(temp_circ, 0), config, measure)[0]
+    #     else:
+    #         h_part = PauliBuilder(pstr).to_gate()
+    #         temp_circ << (h_part, qubit)
+    #         probabilities = backend.evaluate(qlayer.compile_circuit(temp_circ, 0), config, measure)[0]
+    #         temp_circ.instructions.pop()
+    #     probabilities = Parameter(probabilities.cpu().detach() if hasattr(probabilities, 'cpu') else probabilities)
+    #     return (coeff * coeff) * (
+    #                 (eigval * eigval @ probabilities) - (eigval @ probabilities) * (eigval @ probabilities))
 
-    qubit_num = expval_fn.qubits_num
-    ir = expval_fn.check_circuit_get_compiler(expval_fn.circuit).compile(expval_fn.circuit,  expval_fn.optimization_level)
+    def convert_ob(qubit, pstr, eigval, coeff):
+        measure = probs(mqubits=qubit)
+        # zkey = '0' * len(qubit)
+        if pstr == 'P':
+            probabilities = backend.evaluate(qlayer.compile_circuit(temp_circ, 0), config, measure)[0]
+            # probabilities = backend.execute(qlayer.compile_circuit(temp_circ, 0), config).probabilities[0]
+        else:
+            h_part = PauliBuilder(pstr).to_gate()
+            temp_circ << (h_part, qubit)
+            # probabilities = backend.execute(qlayer.compile_circuit(temp_circ, 0), config).raw_probabilities[0]
+            probabilities = backend.evaluate(qlayer.compile_circuit(temp_circ, 0), config, measure)[0]
+            temp_circ.instructions.pop()
+
+        probabilities = Parameter(probabilities.cpu().detach() if hasattr(probabilities, 'cpu') else probabilities)
+        return (coeff * coeff) * (
+                    (eigval * eigval @ probabilities) - (eigval @ probabilities) * (eigval @ probabilities))
+
+    generator = {'Rx': ('X', np.array([1, -1]), -0.5),
+                 'Ry': ('Y', np.array([1, -1]), -0.5),
+                 'Rz': ('Z', np.array([1, -1]), -0.5),
+                 'P': ('P', np.array([0, 1]), 1)}
+
+    qubit_num = qlayer.qubits_num
+    ir = qlayer.ir
+    backend = qlayer.backend
+    config = deepcopy(qlayer.config)
+
+    backend.check_node(ir, qlayer.place_holder)
+    backend.update_param(ir, params)
 
     # Create a temporary circuit to construct the metric tensor
     temp_circ = Circuit()
     temp_circ.allocateQubits(qubit_num)
-    Fubini_study_tensor = np.zeros(shape=params.shape)
+    Fubini_study_tensor = []
+    for param in params:
+        if not isinstance(param, Parameter):
+            raise ValueError(
+                f'The fubini_tensor is only support type:`spinqit.Parameter` params, but got {type(param)}'
+            )
+        Fubini_study_tensor.append(np.zeros(shape=param.shape))
 
-    generator = {'Rx': 'X', 'Ry': 'Y', 'Rz': 'Z'}
-    for v in ir.dag.vs:
-        # Fubini tensor index
-        if v['type'] == 0:
+    vids = _topological_sort(ir.dag)
+    for i in vids:
+        v = ir.dag.vs[i]
+
+        if v['type'] in [0, 1]:
             label = v['name']
-            # if label == 'cnot':
-            #     label = 'cx'
-
-            # The observables corresponding to the generators of the gates in the layer:
-            if v['trainable']:
-                coeff = _grad(v['trainable'])(params)
-                val = convert_ob(v['qubits'], generator[label])
-                Fubini_study_tensor += coeff * coeff * val
+            if 'params' in v.attributes() and v['params'] is not None and v['func'] is not None:
+                for j, _param in enumerate(v['params']):
+                    if callable(v['func'][j]) and requires_grad(_param):
+                        # The observables corresponding to the generators of the gates in the layer:
+                        from autograd import elementwise_grad as egrad
+                        coeff = egrad(v['func'][j])(params)
+                        val = convert_ob(v['qubits'], *generator[label])
+                        for k in range(len(Fubini_study_tensor)):
+                            Fubini_study_tensor[k] += coeff[k] * coeff[k] * val
 
             temp_circ.append_instruction(Instruction(IR.get_basis_gate(label), v['qubits'], [], v['params']))
-
-    Fubini_study_tensor[Fubini_study_tensor == 0] = np.inf
-    inv_tensor = 1 / Fubini_study_tensor
-    return inv_tensor
+    return Fubini_study_tensor
 
 
 class QuantumNaturalGradient(Optimizer):
@@ -78,29 +114,42 @@ class QuantumNaturalGradient(Optimizer):
         self.__maxiter = maxiter
         self.__tolerance = tolerance
         self.__learning_rate = learning_rate
-        self.__verbose = verbose
+        self._verbose = verbose
+        self._step = 1
 
-    def optimize(self, expval_fn):
-        params = expval_fn.params
+    def optimize(self, qlayer, *params):
         loss_list = []
-        for step in range(1, self.__maxiter + 1):
-            start = time.time()
-            loss = self.step(expval_fn, params)
-            end = time.time()
-            if self.__verbose:
-                print('Optimize: step {}, loss: {}, time: {}s'.format(step, loss, end - start))
-            if loss_list and np.abs(loss - loss_list[-1]) < self.__tolerance:
-                if self.__verbose:
-                    print(f'The loss difference less than {self.__tolerance}. Optimize done')
+        params = list(params)
+        self.reset()
+        while self._step <= self.__maxiter:
+            loss = self.step_and_cost(qlayer, params)
+            if self.check_optimize_done(loss, loss_list):
                 break
-            loss_list.append(loss)
+            self._step += 1
         return loss_list
 
-    def step(self, expval_fn, params):
+    @optimizer_timer
+    def step_and_cost(self, qlayer, params):
+        grad_fn = qgrad(qlayer)
+        first_grads = grad_fn(*params)
+        loss = grad_fn.forward
+        Fubini_study_tensor = fubini_tensor(qlayer, *params, )
 
-        loss, first_grads = expval_fn.backward()
-        Fubini_study_tensor_inv = fubini_tensor(expval_fn, params, )
-        derivative = Fubini_study_tensor_inv * first_grads
-        params -= self.__learning_rate * derivative
-        expval_fn.update(params)
+        for i, _tensor in enumerate(Fubini_study_tensor):
+            _tensor[_tensor == 0] = np.inf
+            params[i] -= self.__learning_rate * first_grads[i] / _tensor
         return loss
+
+    def check_optimize_done(self, loss, loss_list):
+        if loss_list and np.abs(loss - loss_list[-1]) < self.__tolerance:
+            print(f'The loss difference less than {self.__tolerance}. Optimize done')
+            check = True
+        else:
+            if self._step == self.__maxiter:
+                print('The optimized process has been reached the max iteration number.')
+            check = False
+        loss_list.append(loss)
+        return check
+
+    def reset(self):
+        self._step = 1

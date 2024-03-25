@@ -16,6 +16,9 @@ from .basic_gate import Gate
 from .matrix_gate import MatrixGate
 from .controlled_gate import ControlledGate
 from .gates import I, H, X, Y, Z, Rx, Ry, Rz, P, T, Td, S, Sd, CX, CY, CZ, SWAP, MEASURE, BARRIER
+from .instruction import Instruction
+from copy import deepcopy
+
 class InverseGate(Gate):
     def __init__(self, gate: Gate) -> None:
         super().__init__(gate.label+'_inv', gate.qubit_num)
@@ -58,3 +61,9 @@ class InverseBuilder(object):
                     inv_gate.factors.append((self._inverse(f[0]), f[1], f[2]))
             inv_gate.factors.reverse()
             return inv_gate
+
+def invert_instruction(instruction: Instruction) -> Instruction:
+    inst_inv = deepcopy(instruction)
+    builder = InverseBuilder(instruction.gate)
+    inst_inv.gate = builder.to_gate()
+    return inst_inv

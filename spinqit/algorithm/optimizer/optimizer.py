@@ -16,7 +16,25 @@
 class Optimizer:
 
     def optimize(self, *args, **kwargs):
+        """
+        The whole optimization process
+        """
         return
 
-    def step(self, *args, **kwargs):
+    def step_and_cost(self, *args, **kwargs):
+        """
+        Every single step for gradients and loss calculation
+        """
+        return
+
+    def reset(self, *args, **kwargs):
+        """
+        reset the optimizer step and other arguments
+        """
+        return
+
+    def check_optimize_done(self, *args, **kwargs):
+        """
+        Check whether the optimization process has reached the end.
+        """
         return

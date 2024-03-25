@@ -27,19 +27,19 @@ def calculate_pauli_expectation(pauli_string: str, probabilities: Dict) -> float
                 '0          0           1'
              qubit[0]    qubit[1]     qubit[2]
     """
-    imat = sparse.csr_matrix(I.matrix())
-    zmat = sparse.csr_matrix(Z.matrix())
-    mat = 1
+    imat = np.array([1, 1])
+    zmat = np.array([1, -1])
+    mat = []
 
     for i, ch in enumerate(pauli_string):
         if ch.upper() in ['X', 'Y', 'Z']:
-            mat = sparse.kron(zmat, mat, format='csr')
+            mat.append(zmat)
         elif ch.upper() == 'I':
-            mat = sparse.kron(imat, mat, format='csr')
+            mat.append(imat)
         else:
             raise ValueError('The input string is not a Pauli string')
 
-    f = mat.diagonal()
+    f = reduce(np.kron, mat)
     expect_value = 0.0
     for key, value in probabilities.items():
         idx = int(key[::-1], 2)

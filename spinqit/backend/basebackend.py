@@ -16,17 +16,21 @@ class BaseBackend:
     def __init__(self, *args, **kwargs):
         pass
 
-    def set_config(self, *args, **kwargs):
+    def process_params(self, *args, **kwargs):
+        raise NotImplementedError
+
+    @staticmethod
+    def check_node(ir, place_holder):
+        raise NotImplementedError
+
+    def update_param(self, *args, **kwargs):
         raise NotImplementedError
 
     def execute(self, *args, **kwargs):
         raise NotImplementedError
 
-    def expval(self, *args, **kwargs):
+    def get_value_and_grad_fn(self, *args, **kwargs):
         raise NotImplementedError
 
-    def grads(self, *args, **kwargs):
-        raise NotImplementedError
-
-    def update_param(self, *args, **kwargs):
+    def evaluate(self, *args, **kwargs):
         raise NotImplementedError

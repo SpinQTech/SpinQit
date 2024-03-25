@@ -12,24 +12,29 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import os
-import queue
+import functools
 from collections import Counter
 from copy import deepcopy
 from typing import List, Iterable
 
-import numpy as np
-import torch
+from autoray import numpy as ar
+import numpy as onp
 from scipy import sparse
 
 from spinqit.backend.backend_util import _add_pauli_gate
-from spinqit.primitive import generate_hamiltonian_matrix, PauliBuilder
-from spinqit.backend.basebackend import BaseBackend
-from spinqit.utils.function import _flatten
+from spinqit.primitive.pauli_builder import PauliBuilder
+from .basebackend import BaseBackend
+from spinqit.grad import grad_func_torch
+from spinqit.model.parameter import LazyParameter, Parameter
+from spinqit.utils.function import _topological_sort, _dfs, requires_grad
 from spinqit.compiler.ir import IntermediateRepresentation as IR
-from spinqit.compiler.ir import NodeType
-
-dtype = torch.complex64
-device = torch.device('cpu')
+try:
+    import torch
+    dtype = torch.complex64
+    device = torch.device('cpu')
+    IMPORTED = True
+except ImportError:
+    IMPORTED = False
 
 
 def torch_matrix(label, params=None):
@@ -39,7 +44,7 @@ def torch_matrix(label, params=None):
 
 
 def _P(x):
-    return (torch_matrix('Z') ** (x / torch.pi)).to(device, dtype)
+    return torch.diag(torch.tensor([1, -1], dtype=dtype) ** (x / torch.pi)).to(device)
 
 
 def _Rx(x):
@@ -55,7 +60,7 @@ def _Rz(x):
 
 
 def _U3(x):
-    return _P(x[1] + x[2]) @ _Rz(-x[2]) @ _Ry(x[0]) @ _Rz(x[2]).to(device, dtype)
+    return (_P(x[1] + x[2]) @ _Rz(-x[2]) @ _Ry(x[0]) @ _Rz(x[2])).to(device, dtype)
 
 
 rotations = {
@@ -78,15 +83,53 @@ class TorchSimulatorConfig:
     def configure_num_thread(self, n_threads):
         self.n_threads = n_threads
 
+    @staticmethod
+    def set_device(new_device):
+        global device
+        if isinstance(new_device, str):
+            device = torch.device(new_device)
+        elif isinstance(new_device, torch.device):
+            device = new_device
+        else:
+            raise ValueError(
+                'The torch backend device is expected type `str` or `torch.device` '
+                f'but got type `{type(new_device)}`. '
+            )
+
+    @staticmethod
+    def set_dtype(new_dtype):
+        global dtype
+        if isinstance(new_dtype, str):
+            dtype_map = {'complex128': torch.complex128,
+                         'complex64': torch.complex64}
+            new_dtype = dtype_map[new_dtype]
+        dtype = new_dtype
+
+
+def lazy_property(fn):
+    """
+    A lazy property decorator.
+    The function decorated is called the first time to retrieve the result and
+    then that calculated result is used the next time you access the value.
+    """
+    attr = '_lazy__' + fn.__name__
+
+    @property
+    def _lazy_property(self):
+        _attr = hasattr(self, attr)
+        _changed = hasattr(self, '__is_change')
+        if _changed or not _attr:
+            setattr(self, attr, fn(self))
+            setattr(self, '__is_change', False)
+        return getattr(self, attr)
+
+    return _lazy_property
+
 
 class TorchResult:
     def __init__(self, ):
         self.states = None
         self.config = None
-        self.__counts = None
-        self.__prob = None
-        self.__torch_counts = None
-        self.__torch_prob = None
         self.__is_change = None
 
     def __str__(self):
@@ -97,78 +140,45 @@ class TorchResult:
         self.config = config
         self.__is_change = True
 
-    @property
+    @lazy_property
     def counts(self):
-        if not self.__is_change and self.__counts is not None:
-            return self.__counts
         shots = self.config.shots
         if shots is None:
             shots = 1024
         probabilities, batch = self._process_prob(self.config, self.states)
-        if probabilities.is_cuda:
-            probabilities = probabilities.cpu()
+        probabilities = probabilities.cpu()
         if not batch:
             counts = Counter(torch.multinomial(probabilities, shots, True).tolist())
-            self.__counts = {bin(key)[2:].zfill(int(np.log2(len(probabilities)))): count
-                             for key, count in sorted(counts.items()) if count != 0}
-
+            return {bin(key)[2:].zfill(int(onp.log2(len(probabilities)))): count
+                    for key, count in sorted(counts.items()) if count != 0}
         else:
-            self.__counts = {}
+            _counts = {}
             for i in range(batch[0]):
                 counts = Counter(torch.multinomial(probabilities[i], shots, True).tolist())
-                self.__counts[f'batch {i}'] = {bin(key)[2:].zfill(int(np.log2(len(probabilities[i])))): count
-                                               for key, count in sorted(counts.items()) if count != 0}
-        self.__is_change = False
-        return self.__counts
+                _counts[f'batch {i}'] = {
+                    bin(key)[2:].zfill(int(onp.log2(len(probabilities[i])))): count
+                    for key, count in sorted(counts.items()) if count != 0}
+            return _counts
 
-    @property
+    @lazy_property
     def probabilities(self):
-        if not self.__is_change and self.__prob is not None:
-            return self.__prob
-        probabilities, batch = self._process_prob(self.config, self.states)
-        if probabilities.is_cuda:
-            probabilities = probabilities.cpu()
-        if not batch:
-            self.__prob = {bin(key)[2:].zfill(int(np.log2(len(probabilities)))): prob.detach().numpy()
-                           for key, prob in enumerate(probabilities) if abs(prob) > 1e-6}
-        else:
-            self.__prob = {}
-            for i in range(batch[0]):
-                self.__prob[f'batch {i}'] = {
-                    bin(key)[2:].zfill(int(np.log2(len(probabilities)))): prob.detach().numpy()
-                    for key, prob in enumerate(probabilities[i]) if abs(prob) > 1e-6}
-        self.__is_change = False
-        return self.__prob
-
-    @property
-    def torch_prob(self):
-        if not self.__is_change and self.__torch_prob is not None:
-            return self.__torch_prob
         probabilities, _ = self._process_prob(self.config, self.states)
-        self.__torch_prob = probabilities
-        self.__is_change = False
-        return self.__torch_prob
+        probabilities = probabilities.cpu()
+        prob_dict = {}
+        width = int(onp.log2(len(probabilities)))
+        for key, prob in enumerate(probabilities):
+            if prob > 1e-15:
+                prob_dict[bin(key)[2:].zfill(width)] = prob.item()
+        return prob_dict
 
-    @property
-    def torch_counts(self):
-        if not self.__is_change and self.__torch_counts is not None:
-            return self.__torch_counts
-        shots = self.config.shots
-        if shots is None:
-            shots = 1024
-        probabilities, batch = self._process_prob(self.config, self.states)
-        length = probabilities.size(0) if not batch else probabilities.size(1)
-        counts = torch.concat([torch.bincount(
-            torch.multinomial(probabilities[i], shots, True),
-            minlength=length
-        ).reshape(1, -1) for i in range(batch[0])], dim=0)
-        self.__torch_counts = counts
-        self.__is_change = False
-        return self.__torch_counts
+    @lazy_property
+    def raw_probabilities(self):
+        probabilities, _ = self._process_prob(self.config, self.states)
+        return probabilities
 
     @staticmethod
     def _process_prob(config, np_states):
-        qubit_num = int(np.log2(np_states.shape[-1:]))
+        qubit_num = int(onp.log2(np_states.shape[-1:]))
         probabilities = torch.abs(np_states) ** 2
         higher_dim = list(probabilities.shape[:-1])
         if config.mqubits is not None:
@@ -188,7 +198,7 @@ class TorchResult:
         return probabilities, higher_dim
 
     def get_random_reading(self):
-        return np.random.choice(list(self.counts.keys()))
+        return onp.random.choice(list(self.counts.keys()))
 
 
 class TorchSimulator:
@@ -199,95 +209,99 @@ class TorchSimulator:
     def __init__(self):
         self.result = TorchResult()
 
-    def __call__(self, state, exe, params, config) -> TorchResult:
+    def __call__(self, exe, config) -> TorchResult:
         """
 
         Args:
-            state (torch.Tensor): The initial quantum state
             exe (IntermediateRepresentation): calculate graph for quantum circuit.
-            params (torch.Tensor): The parameter for circuit
             config (TorchSimulatorConfig):
         Return:
             final_state:torch.Tensor
 
         """
-
-        qubits_num = exe.qnum
-        final_state = self.get_final_state(exe, state, params, qubits_num)
+        torch.set_num_threads(config.n_threads)
+        state = torch.zeros(2 ** exe.qnum).to(device, dtype)
+        state[0] = 1
+        final_state = self.get_final_state(exe, state)
         self.result.set_result(final_state, config)
         return self.result
 
-    def get_final_state(self, ir, state, params, qubits_num):
-        vids = self._topological_sort(ir.dag)
+    def get_final_state(self, ir, state):
+        vids = _topological_sort(ir.dag)
         for i in vids:
             v = ir.dag.vs[i]
-            if v['type'] == NodeType.op.value:
-                _p = self._check_params(v, params)
-                state = self._op_node(v, _p, state, v['qubits'], qubits_num)
-            elif v['type'] == NodeType.caller.value:
-                state = self._caller_node(v, v['params'], state, v['qubits'], qubits_num, ir.dag)
+            node_params = v['params'] if 'params' in v.attributes() else []
+            if v['type'] == 0:
+                if v['name'] == 'StateVector':
+                    state = self._state_vector_node(node_params, ir.qnum)
+                else:
+                    state = self._op_node(v['name'], node_params, state, v['qubits'], ir.qnum)
+            elif v['type'] == 1:
+                state = self._caller_node(v['name'], node_params, state, v['qubits'], ir.qnum, ir.dag)
         return state
 
-    def _op_node(self, v, params, state, qubits, qubits_num):
-        label = v['name']
-        if 'trainable' in v.attributes() and v['trainable']:
+    @staticmethod
+    def _state_vector_node(states, qubits_num):
+        if len(states) == 1:
+            state = torch.as_tensor(states[0], device=device, dtype=dtype)
+        else:
+            state = torch.as_tensor(states, device=device, dtype=dtype)
+
+        if not torch.allclose((state ** 2).sum().real, torch.tensor(1., dtype=state.real.dtype)):
+            raise ValueError(
+                f'The `StateVector` is not a quantum state, expected norm(state) to be 1, but got {(state ** 2).sum().real}'
+            )
+
+        if state.size(-1) != 2 ** qubits_num:
+            padding = torch.zeros(
+                (
+                    (state.size(0), 2 ** qubits_num - state.size(-1)) if len(state.size()) > 1
+                    else (2 ** qubits_num - state.size(-1))
+                )
+            )
+            state = torch.concat((state, padding), dim=0)
+
+        return state
+
+    def _op_node(self, label, params, state, qubits, qubits_num):
+        # The trainable gate used the torch rewrite gate function, otherwise the used the spinqit.gate.matrix and
+        # convert to the torch tensor.
+        if params is not None and any((isinstance(p, torch.Tensor) and p.requires_grad is True) for p in params):
+            if isinstance(params, list) and len(params) == 1:
+                params = params[0]
             gate = rotations[label.lower()](params)
         else:
             gate = torch_matrix(label, params)
         state = self._apply_gate(state, gate, qubits, qubits_num)
         return state
 
-    def _dfs(self, root_index: int, graph, visited, result: List):
-        successors = graph.neighbors(root_index, mode='out')
-        for s in successors:
-            if s not in visited:
-                self._dfs(s, graph, visited, result)
-        result.append(root_index)
-        visited.add(root_index)
-
-    @staticmethod
-    def _topological_sort(graph) -> List[int]:
-        indegree_table = [0] * graph.vcount()
-        for i in range(graph.vcount()):
-            indegree_table[i] = graph.vs[i].indegree()
-        registers = graph.vs.select(type=NodeType.register.value)
-        vids = []
-        vq = queue.Queue()
-        for r in registers:
-            vq.put(r.index)
-        while not vq.empty():
-            vid = vq.get()
-            vids.append(vid)
-            neighbors = graph.neighbors(vid, mode="out")
-            for n in neighbors:
-                indegree_table[n] -= 1
-                if indegree_table[n] == 0:
-                    vq.put(n)
-        return vids
-
-    def _caller_node(self, v, params, state, qubits, qubits_num, graph, ):
-        gname = v['name']
-
-        def_node = graph.vs.find(gname, type=NodeType.definition.value)
+    def _caller_node(self, label, params, state, qubits, qubits_num, graph, ):
+        def_node = graph.vs.find(label, type=2)
 
         topo_sort_list = []
         visited = set()
-        self._dfs(def_node.index, graph, visited, topo_sort_list)
+        _dfs(def_node.index, graph, visited, topo_sort_list)
         topo_sort_list = topo_sort_list[::-1]
         for node_idx in topo_sort_list:
             node = graph.vs[node_idx]
             if node.index != def_node.index:
-                qidxes = node['qubits']
-                local = [qubits[i] for i in qidxes]
-                callee_params = self._check_params(node, params)
-                if node['type'] == NodeType.callee.value:
-                    state = self._op_node(node, callee_params, state, local, qubits_num)
-                elif node['type'] == NodeType.caller.value:
-                    state = self._caller_node(node, callee_params, state, local, qubits_num, graph)
+                local = [qubits[i] for i in node['qubits']]
+                plambda = None if 'params' not in node.attributes() else node['params']
+                if 'pindex' in node.attributes() and node['pindex'] is not None:
+                    try:
+                        p = [f(*[params[idx] for idx in node['pindex']]) for f in plambda]
+                    except Exception:
+                        p = [f([params[idx] for idx in node['pindex']]) for f in plambda]
+                    callee_params = [] if not plambda else p
+                else:
+                    callee_params = [] if not plambda else [f(params) for f in plambda]
+                if node['type'] == 3:
+                    state = self._op_node(node['name'], callee_params, state, local, qubits_num)
+                elif node['type'] == 1:
+                    state = self._caller_node(node['name'], callee_params, state, local, qubits_num, graph)
         return state
 
-    def _apply_gate(self, state: torch.Tensor, gate: torch.Tensor,
-                    qubit_idx: List[int], num_qubits: int) -> torch.Tensor:
+    def _apply_gate(self, state, gate, qubit_idx: List[int], num_qubits: int):
 
         if not isinstance(qubit_idx, Iterable):
             qubit_idx = [qubit_idx]
@@ -345,70 +359,25 @@ class TorchSimulator:
             state = state.reshape(shape).permute(perm)
         return state
 
-    @staticmethod
-    def _check_params(v, params, ):
-        if 'trainable' in v.attributes() and v['trainable']:
-            if params is None:
-                raise ValueError(
-                    'There are no trainable parameters in the quantum circuit.'
-                )
-            func = v['trainable']
-            _p = func(params)
-        elif 'pindex' in v.attributes() and v['pindex'] is not None:
-            pidx = v['pindex']
-            _p = []
-            start = 0
-            for func in (v['params']):
-                arg_count = func.__code__.co_argcount
-                if arg_count == 0:
-                    _p.append(func())
-                else:
-                    try:
-                        _p.append(func(tuple(params[i] for i in pidx[start:start + arg_count])))
-                    except TypeError:
-                        _p.append(func(*tuple(params[i] for i in pidx[start:start + arg_count])))
-                    start += arg_count
-        else:
-            _p = None if ('params' not in v.attributes() or not v['params']) else v['params']
-        return _p
-
-    @staticmethod
-    def set_device(new_device):
-        global device
-        if isinstance(new_device, str):
-            device = torch.device(new_device)
-        elif isinstance(new_device, torch.device):
-            device = new_device
-        else:
-            raise ValueError(
-                'The torch backend device is expected type `str` or `torch.device` '
-                f'but got type `{type(new_device)}`. '
-            )
-
-    @staticmethod
-    def set_dtype(new_dtype):
-        global dtype
-        dtype = new_dtype
-
 
 def torch_pauli_expectation(pauli_string, probabilities):
-    imat = sparse.csr_matrix(np.eye(2))
-    zmat = sparse.csr_matrix(np.array([[1,0],[0,-1]]))
-    mat = 1
+    i_eigvals = torch.tensor([1., 1], dtype=probabilities.dtype, device=probabilities.device)
+    z_eigvals = torch.tensor([1., -1], dtype=probabilities.dtype, device=probabilities.device)
+    mat = []
 
     for i, ch in enumerate(pauli_string):
         if ch.upper() in ['X', 'Y', 'Z']:
-            mat = sparse.kron(zmat, mat, format='csr')
+            mat.append(z_eigvals)
         elif ch.upper() == 'I':
-            mat = sparse.kron(imat, mat, format='csr')
+            mat.append(i_eigvals)
         else:
             raise ValueError('The input string is not a Pauli string')
 
-    f = torch.tensor(mat.diagonal())
+    f = functools.reduce(torch.kron, mat)
     if len(probabilities.shape) < 2:
         probabilities = probabilities.unsqueeze(0)
     expect_val = (probabilities * f).sum(dim=1)
-    return expect_val
+    return expect_val[0]
 
 
 class TorchSimulatorBackend(BaseBackend):
@@ -417,90 +386,130 @@ class TorchSimulatorBackend(BaseBackend):
 
         self.simulator = TorchSimulator()
 
-    def execute(self, ir, config, state=None, params=None):
-        qubits_num = ir.qnum
-        if state is None:
-            state = torch.tensor([1.0] + [0.0] * (2 ** qubits_num - 1)).to(device, dtype)
-        else:
-            if int(np.log2(state.shape[-1:])) != qubits_num:
-                raise ValueError(
-                    f'The number of qubits of state is wrong. Expected {qubits_num}, '
-                    f'but got {int(np.log2(len(state)))}'
-                )
-            if not isinstance(state, torch.Tensor):
-                state = torch.from_numpy(state)
-            state = state.to(device, dtype)
-        if params is not None:
-            params = self.process_params(params)
-        torch.set_num_threads(config.n_threads)
-        result = self.simulator(state, ir, params, config)
+    def execute(self, ir, config):
+        result = self.simulator(ir, config)
         return result
 
-    def expval(self, ir, config, hamiltonian, state=None, params=None):
-        if isinstance(hamiltonian, (np.ndarray, sparse.csr_matrix)):
-            hamiltonian = self._process_hamiltonian(hamiltonian)
-            state = self.execute(ir, config, state=state, params=params).states
+    def get_value_and_grad_fn(self, ir, config, measure_op=None, place_holder=None, grad_method=None):
+        if not IMPORTED:
+            raise ImportError(
+                'The torch has not been installed, use other backend or try to install torch.'
+            )
+        self.check_node(ir, place_holder)
+        ir = deepcopy(ir)
 
-            b = state.conj()
-            if len(state.shape) > 1:
-                k = hamiltonian @ state.T
-                value = torch.real(torch.diagonal(b @ k))
+        def value_and_grad_fn(params):
+            if grad_method == 'backprop':
+                execute_grad_mode = torch.enable_grad
             else:
-                k = hamiltonian @ state
-                value = torch.real(b @ k)
-        elif isinstance(hamiltonian, list):
+                execute_grad_mode = torch.no_grad
+            with execute_grad_mode():
+                params_for_grad = self.process_params(params)
+                self.update_param(ir, params_for_grad)
+                val, _ = self.evaluate(ir, config, measure_op)
+                backward_fn = grad_func_torch(ir, params_for_grad, config, self, measure_op, val, grad_method)
+            return val.cpu().detach().numpy() if hasattr(val, 'cpu') else val, backward_fn
+
+        return value_and_grad_fn
+
+    def evaluate(self, ir, config, measure_op):
+        if measure_op is None:
+            raise ValueError(
+                'The measure_op should not be None.'
+            )
+        if isinstance(measure_op.hamiltonian, list):
             value = 0.0
+            hamiltonian = measure_op.hamiltonian
             mqubits = config.mqubits if config.mqubits is not None else list(range(ir.qnum))
             for i, (pstr, coeff) in enumerate(hamiltonian):
                 h_part = PauliBuilder(pstr).to_gate()
-                execute_ir = deepcopy(ir)
-                _add_pauli_gate(h_part, mqubits, execute_ir)
-                result = self.execute(execute_ir, config, state=state, params=params)
-                value += coeff * torch_pauli_expectation(pstr, result.torch_prob)
+                node_idx = _add_pauli_gate(h_part, mqubits, ir)
+                result = self.execute(ir, config)
+                ir.remove_nodes(node_idx)
+                value += coeff * torch_pauli_expectation(pstr, result.raw_probabilities)
+            return value, None
         else:
-            raise NotImplementedError
-        return value
-
-    def grads(self, ir, params, hamiltonian, config, method, state=None):
-        if method != 'backprop':
-            raise NotImplementedError('The torch backend only supported `backprop` grad_method')
-        params = self.process_params(params)
-        val = self.expval(ir, config, hamiltonian, state, params)
-        val.backward()
-        return val.detach().numpy(), params.grad.detach().numpy()
+            if measure_op.mqubits is not None:
+                config.configure_measure_qubits(measure_op.mqubits)
+            res = self.execute(ir, config)
+            if measure_op.mtype == 'expval':
+                hamiltonian = measure_op.hamiltonian
+                if not isinstance(hamiltonian, (onp.ndarray, sparse.csr_matrix)):
+                    raise ValueError(
+                        f'The hamiltonian type is wrong. '
+                        f'Expected `np.ndarray, sparse.csr_matrix, list`, but got `{type(hamiltonian)}`'
+                    )
+                if isinstance(hamiltonian, onp.ndarray):
+                    hamiltonian = torch.as_tensor(hamiltonian, dtype, device)
+                elif isinstance(hamiltonian, sparse.csr_matrix):
+                    hamiltonian = self._scipy_sparse_mat_to_torch_sparse_tensor(hamiltonian)
+                else:
+                    hamiltonian = hamiltonian.to(device, dtype)
+                state = res.states
+                b = state.conj()
+                if len(state.shape) > 1:
+                    k = hamiltonian @ state.T
+                    value = torch.real(torch.diagonal(b @ k))
+                else:
+                    k = hamiltonian @ state
+                    value = torch.real(b @ k)
+            elif measure_op.mtype == 'prob':
+                value = res.raw_probabilities
+            elif measure_op.mtype == 'count':
+                value = res.counts
+            elif measure_op.mtype == 'state':
+                value = res.states
+            else:
+                raise ValueError(
+                    f'The wrong measure_op.mtype expected `prob`, `expval`, `count`, `state`, but got {measure_op.mtype}'
+                )
+            return value, res
 
     def update_param(self, ir=None, new_params=None):
         """
         Set the new_params to the backend and Update the trainable params
-        For torch backend It is not necessary
         """
         if new_params is not None:
-            if isinstance(new_params, torch.Tensor):
-                if new_params.is_cuda:
-                    new_params = new_params.cpu()
-                if new_params.requires_grad:
-                    new_params = new_params.detach().numpy()
             for v in ir.dag.vs:
-                if v['trainable']:
-                    func = v['trainable']
-                    v['params'] = list(_flatten((func(new_params).tolist(),)))
+                if v['type'] in [0, 1] and 'func' in v.attributes() and v['func']:
+                    # v['func'] indicates that the parameter comes from the outside
+                    func = v['func']
+                    _params = []
+                    for f in func:
+                        if callable(f):
+                            _p = f(new_params)
+                        else:
+                            _p = torch.as_tensor(f)
+                        _params.append(_p)
 
-    def set_dtype(self, new_dtype):
-        self.simulator.set_dtype(new_dtype)
-
-    def set_device(self, new_device):
-        self.simulator.set_device(new_device)
+                    v['params'] = _params
 
     @staticmethod
     def process_params(new_params):
-        if not isinstance(new_params, torch.Tensor):
-            if isinstance(new_params, np.ndarray):
-                new_params = torch.from_numpy(new_params)
-            else:
-                new_params = torch.tensor(new_params)
-        if not new_params.requires_grad:
-            new_params = new_params.requires_grad_()
-        return new_params
+        """
+        This function transform the trainable data to the torch.Tensor(requires_grad=True) for parameterized circuit.
+        """
+
+        execute_params = []
+        for param in new_params:
+            trainable = requires_grad(param)
+            execute_params.append(ar.asarray(param, like='torch').requires_grad_(trainable))
+        return execute_params
+
+    @staticmethod
+    @functools.lru_cache
+    def check_node(ir, place_holder):
+        if place_holder is not None:
+            for v in ir.dag.vs:
+                if v['type'] in [0, 1] and 'params' in v.attributes() and v['params'] is not None:
+                    params = v['params']
+                    record_function = []
+                    for p in params:
+                        if isinstance(p, LazyParameter):
+                            record_function.append(p.get_function(place_holder))
+                        else:
+                            record_function.append(torch.as_tensor(p))
+                    v['func'] = record_function if len(record_function) > 0 else None
 
     @staticmethod
     def _scipy_sparse_mat_to_torch_sparse_tensor(sparse_mx):
@@ -512,18 +521,7 @@ class TorchSimulatorBackend(BaseBackend):
         """
         sparse_mx = sparse_mx.tocoo()
         indices = torch.from_numpy(
-            np.vstack((sparse_mx.row, sparse_mx.col)).astype(np.int64))
+            onp.vstack((sparse_mx.row, sparse_mx.col)).astype(onp.int64))
         values = torch.from_numpy(sparse_mx.data)
         shape = torch.Size(sparse_mx.shape)
         return torch.sparse_coo_tensor(indices, values, shape).to(device, dtype)
-
-    def _process_hamiltonian(self, hamiltonian, ):
-        if hamiltonian is not None:
-            if not isinstance(hamiltonian, (list, sparse.csr_matrix, np.ndarray)):
-                raise ValueError('The hamiltonian is not supported, should be a list of pauli string with coefficient'
-                                 f'or use `generate_hamiltonian_matrix` to construct `sparse.csr_matrix` or `np.ndarray`, '
-                                 f'but got {type(hamiltonian)}')
-            if isinstance(hamiltonian, list):
-                hamiltonian = generate_hamiltonian_matrix(hamiltonian)
-            hamiltonian = self._scipy_sparse_mat_to_torch_sparse_tensor(hamiltonian)
-        return hamiltonian

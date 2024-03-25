@@ -37,8 +37,8 @@ PYBIND11_MODULE(spinq_backends, m) {
 
     py::class_<Result>(m, "Result")
     .def(py::init<>())
-    .def_readwrite("counts", &Result::counts)
     .def_readwrite("states", &Result::states)
     .def_readwrite("probabilities", &Result::probabilities)
+    .def_property_readonly("counts", &Result::get_counts)
     .def("get_random_reading", &Result::get_random_reading);
 }

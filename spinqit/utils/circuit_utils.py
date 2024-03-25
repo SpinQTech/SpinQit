@@ -202,7 +202,3 @@ def haar_density_operator(num_qubits: int, rank: Optional[int] = None,
         rho = ginibre_matrix @ ginibre_matrix.conj().T
     rho = rho / np.trace(rho)
     return rho / np.trace(rho)
-
-
-if __name__ == '__main__':
-    pass

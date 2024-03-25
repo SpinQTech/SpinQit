@@ -78,7 +78,7 @@ def generate_power_gate(gate: Gate, exponent: Union[int, float], qubits: List, p
             else:
                 sub_gate = build_gate_for_isometry(unitary_power)
                 qlist = list(range(gate.qubit_num))
-                power_gate_builder.append(sub_gate, qlist[::-1])
+                power_gate_builder.append(sub_gate, qlist)
             inst_list.append(Instruction(power_gate_builder.to_gate(), qubits))
         elif gate.qubit_num <= 2 and gate.matrix is not None:
             unitary = gate.get_matrix(*params)
@@ -86,7 +86,6 @@ def generate_power_gate(gate: Gate, exponent: Union[int, float], qubits: List, p
             unitary_power = du @ diag @ du.conj().T
             if gate.qubit_num == 1:
                 alpha, beta, gamma, phase = decompose_zyz(unitary_power)
-                # print(alpha, beta, gamma, phase)
                 inst_list.append(Instruction(Rz, qubits, [], alpha))
                 inst_list.append(Instruction(Ry, qubits, [], beta))
                 inst_list.append(Instruction(Rz, qubits, [], gamma))
@@ -114,7 +113,7 @@ def generate_power_gate(gate: Gate, exponent: Union[int, float], qubits: List, p
             else:
                 sub_gate = build_gate_for_isometry(unitary_power)
                 qlist = list(range(gate.qubit_num))
-                power_gate_builder.append(sub_gate, qlist[::-1])
+                power_gate_builder.append(sub_gate, qlist)
             inst_list.append(Instruction(power_gate_builder.to_gate(), qubits))
         elif gate.qubit_num == 1:
             alpha, beta, gamma, phase = decompose_zyz(unitary_power)
@@ -126,7 +125,7 @@ def generate_power_gate(gate: Gate, exponent: Union[int, float], qubits: List, p
             inst_list.extend(decompose_two_qubit_gate(unitary_power, qubits[0], qubits[1]))
         else:
             power_gate = build_gate_for_isometry(unitary_power)
-            inst_list.append(Instruction(power_gate, qubits[::-1]))
+            inst_list.append(Instruction(power_gate, qubits))
     
     if control:
         for inst in inst_list:

@@ -11,11 +11,11 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import time
-
 import numpy as np
 
 from .optimizer import Optimizer
+from .utils import optimizer_timer
+from ...grad import qgrad
 
 
 class ADAM(Optimizer):
@@ -38,38 +38,44 @@ class ADAM(Optimizer):
         self.__beta1 = beta1
         self.__beta2 = beta2
         self.__noise_factor = noise_factor
-        self.__verbose = verbose
-        self.__accumulation = 1
+        self._verbose = verbose
+        self._step = 1
 
-    def optimize(self, expval_fn):
-        params = expval_fn.params
+    def optimize(self, qlayer, *params):
         loss_list = []
-        for step in range(1, self.__maxiter + 1):
-            start = time.time()
-            loss = self.step(expval_fn, params)
-            end = time.time()
-            if self.__verbose:
-                print('Optimize: step {}, loss: {}, time: {}s'.format(step, loss, end - start))
-            if loss_list and np.abs(loss - loss_list[-1]) < self.__tolerance:
-                if self.__verbose:
-                    print(f'The loss difference less than {self.__tolerance}. Optimize done')
+        params = list(params)
+        self.reset(params)
+        while self._step <= self.__maxiter:
+            loss = self.step_and_cost(qlayer, params)
+            if self.check_optimize_done(loss, loss_list):
                 break
-            loss_list.append(loss)
+            self._step += 1
         return loss_list
 
-    def step(self, expval_fn, params):
-
-        if self.__mt is None:
-            self.__mt = np.zeros_like(params)
-
-        if self.__vt is None:
-            self.__vt = np.zeros_like(params)
-
-        loss, derivative = expval_fn.backward()
-        self.__mt = self.__beta1 * self.__mt + (1 - self.__beta1) * derivative
-        self.__vt = self.__beta2 * self.__vt + (1 - self.__beta2) * derivative * derivative
-        rate_eff = self.__learning_rate * np.sqrt(1 - self.__beta2 ** self.__accumulation) / (1 - self.__beta1 ** self.__accumulation)
-        params -= rate_eff * self.__mt / (np.sqrt(self.__vt) + self.__noise_factor)
-        self.__accumulation += 1
-        expval_fn.update(params)
+    @optimizer_timer
+    def step_and_cost(self, qlayer, params):
+        grad_fn = qgrad(qlayer)
+        derivative = grad_fn(*params)
+        loss = grad_fn.forward        
+        for i in range(len(params)):
+            self.__mt[i] = self.__beta1 * self.__mt[i] + (1 - self.__beta1) * derivative[i]
+            self.__vt[i] = self.__beta2 * self.__vt[i] + (1 - self.__beta2) * derivative[i] * derivative[i]
+            rate_eff = self.__learning_rate * np.sqrt(1 - self.__beta2 ** self._step) / (1 - self.__beta1 ** self._step)
+            params[i] -= rate_eff * self.__mt[i] / (np.sqrt(self.__vt[i]) + self.__noise_factor)
         return loss
+
+    def check_optimize_done(self, loss, loss_list):
+        if loss_list and np.abs(loss - loss_list[-1]) < self.__tolerance:
+            print(f'The loss difference less than {self.__tolerance}. Optimize done')
+            check = True
+        else:
+            if self._step == self.__maxiter:
+                print('The optimized process has been reached the max iteration number.')
+            check = False
+        loss_list.append(loss)
+        return check
+
+    def reset(self, params):
+        self._step = 1
+        self.__mt = [0]*len(params)
+        self.__vt = [0]*len(params)

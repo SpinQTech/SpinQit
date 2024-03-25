@@ -34,16 +34,46 @@ string Result::to_string(long key, size_t qnum)
     return oss.str();
 }
 
+map<string, int> Result::get_counts()
+{
+    if (!counts.empty()) return counts;
+    
+    vector<string> less;
+    int sum = 0;
+    for (auto it = probabilities.begin(); it != probabilities.end(); ++it) {
+        double p = it->second;
+        double val = p * shots;
+        int cnt = (int)val;
+        double rval = round(val);
+        if (cnt > 0) {
+            counts[it->first] = cnt;
+            sum += cnt;
+        }
+        if(rval > val) less.push_back(it->first); 
+    }
+    int total = shots - sum;
+    if (total > 0) {
+        for (size_t i = 0; i < less.size(); i++)
+        {
+            counts[less[i]] += 1;
+            total--;
+            if(total==0) break;
+        }
+    }
+    
+    while (total > 0) {
+        for (auto it = counts.begin(); it != counts.end(); ++it ) {
+            it->second += 1;
+            total--;
+            if(total==0) break;
+        }
+    }
+    
+    return counts;
+}
+
 string Result::get_random_reading()
 {
-    // vector<string> readings;
-    // if (counts.size() != 0) {
-    //     for (auto it = counts.begin(); it != counts.end(); ++it) {
-    //         for (int i=0; i<it->second; ++i) {
-    //             readings.push_back(it->first);
-    //         }
-    //     }
-    // } 
     auto it = probabilities.begin();
     size_t qubit_num = it->first.length();
     random_device seed;

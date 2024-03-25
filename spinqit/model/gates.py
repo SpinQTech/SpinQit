@@ -81,7 +81,7 @@ U.label = 'U'
 U.matrix = lambda params: np.array([[cos(params[0]/2), -exp(1j*params[2]) * sin(params[0]/2)], 
                                    [exp(1j*params[1]) * sin(params[0]/2), exp(1j*(params[1]+params[2])) * cos(params[0]/2)]])
 
-SWAP_builder = GateBuilder(2, 'swap')
+SWAP_builder = GateBuilder(2, 'SWAP')
 SWAP_builder.append(CX, [0, 1])
 SWAP_builder.append(CX, [1, 0])
 SWAP_builder.append(CX, [0, 1])
@@ -89,7 +89,7 @@ SWAP_builder.append(CX, [0, 1])
 SWAP = SWAP_builder.to_gate()
 SWAP.matrix = lambda *args: np.array([[1,0,0,0], [0,0,1,0], [0,1,0,0], [0,0,0,1]])
 
-CCX_builder = GateBuilder(3, 'ccx')
+CCX_builder = GateBuilder(3, 'CCX')
 CCX_builder.append(H, [2])
 CCX_builder.append(CX, [1,2])
 CCX_builder.append(Td, [2])
@@ -107,7 +107,7 @@ CCX_builder.append(Td, [1])
 CCX_builder.append(CX, [0,1])
 
 CCX = CCX_builder.to_gate()
-CCX.label = 'ccx'
+CCX.label = 'CCX'
 CCX.matrix = lambda *args: np.array([[1,0,0,0,0,0,0,0], [0,1,0,0,0,0,0,0], [0,0,1,0,0,0,0,0], [0,0,0,1,0,0,0,0], [0,0,0,0,1,0,0,0], [0,0,0,0,0,1,0,0], [0,0,0,0,0,0,0,1], [0,0,0,0,0,0,1,0]])
 
 # CP_builder = GateBuilder(2)
@@ -148,3 +148,5 @@ CSWAP.matrix = lambda *args: np.array([[1, 0, 0, 0, 0, 0, 0, 0],
 
 MEASURE = Gate('MEASURE', sys.maxsize)
 BARRIER = Gate('BARRIER', sys.maxsize)
+StateVector = Gate('StateVector', sys.maxsize)
+# AmplitudeStateEncoding = Gate('StateEncodingAmplitude', sys.maxsize)

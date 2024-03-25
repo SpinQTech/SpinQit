@@ -11,11 +11,11 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from typing import Union, Callable
+from typing import Union, Callable, List
 from spinqit.model import Gate, GateBuilder
 
 class RepeatBuilder(GateBuilder):
-    def __init__(self, g: Gate, repeat: int, param_lambda: Union[float,Callable] = None):
+    def __init__(self, g: Gate, repeat: int, param_lambda: Union[float,Callable,List] = None):
         super().__init__(g.qubit_num * repeat)
         if isinstance(param_lambda, float):
             param_lambda = lambda *args: param_lambda

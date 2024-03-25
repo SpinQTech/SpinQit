@@ -1,4 +1,4 @@
-# Copyright 2022 SpinQ Technology Co., Ltd.
+# Copyright 2023 SpinQ Technology Co., Ltd.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,7 +13,7 @@
 # limitations under the License.
 import numpy as np
 from spinqit import generate_hamiltonian_matrix
-from spinqit import Circuit, Parameter, Rx, Rz, CX
+from spinqit import Circuit, Rx, Rz, CX
 from spinqit.algorithm import VQE
 from spinqit.algorithm.optimizer import TorchOptimizer
 
@@ -40,25 +40,24 @@ lr = 0.1
 seed = 1024
 np.random.seed(seed)
 
-params = Parameter(np.random.uniform(0, 2 * np.pi, 3 * qubit_num * depth),
-                               trainable=True)
-ansatz = Circuit(params)
-qreg = ansatz.allocateQubits(qubit_num)
+circ = Circuit()
+qreg = circ.allocateQubits(qubit_num)
+params = circ.add_params(shape=(depth, qubit_num, 3))
 for d in range(depth):
     for q in range(qubit_num):
-        ansatz << (Rx, qreg[q], lambda x, idx=3 * qubit_num * d + 3 * q: x[idx])
-        ansatz << (Rz, qreg[q], lambda x, idx=3 * qubit_num * d + 3 * q + 1: x[idx])
-        ansatz << (Rx, qreg[q], lambda x, idx=3 * qubit_num * d + 3 * q + 2: x[idx])
+        circ << (Rx, qreg[q], params[d][q][0])
+        circ << (Rz, qreg[q], params[d][q][1])
+        circ << (Rx, qreg[q], params[d][q][2])
     
     for q in range(qubit_num - 1):
-        ansatz.append(CX, [qreg[q], qreg[q + 1]])
-    ansatz.append(CX, [qreg[qubit_num - 1], qreg[0]])
+        circ.append(CX, [qreg[q], qreg[q + 1]])
+    circ.append(CX, [qreg[qubit_num - 1], qreg[0]])
 
 optimizer = TorchOptimizer(maxiter=Iter, verbose=False, learning_rate=lr)
 ham_mat = generate_hamiltonian_matrix(ham)
-vqe = VQE(qubit_num, depth, ham_mat, ansatz, optimizer=optimizer)
-# loss_list = vqe.run(mode='torch', grad_method='backprop')
+vqe = VQE(ham_mat, optimizer, ansatz=circ, params=(depth, qubit_num, 3))
+loss_list = vqe.run(mode='torch', grad_method='backprop')
 # loss_list = vqe.run(mode='spinq', grad_method='param_shift')
-loss_list = vqe.run(mode='spinq', grad_method='adjoint_differentiation')
+# loss_list = vqe.run(mode='spinq', grad_method='adjoint_differentiation')
 print(loss_list)
 

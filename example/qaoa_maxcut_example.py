@@ -16,7 +16,7 @@ import numpy as np
 
 from spinqit import get_basic_simulator, BasicSimulatorConfig
 from spinqit import generate_hamiltonian_matrix
-from spinqit.algorithm.optimizer.adam import ADAM
+from spinqit.algorithm.optimizer import ADAM, TorchOptimizer
 from spinqit.algorithm.qaoa import QAOA
 
     
@@ -38,18 +38,16 @@ print(ham)
 
 qubit_num = vcount
 depth = 4
-Iter = 50
+iter_num = 30
 lr = 0.1
 
 np.random.seed(1024)
-optimizer = ADAM(maxiter=Iter, verbose=True, learning_rate=lr, )
+optimizer = TorchOptimizer(maxiter=iter_num, verbose=True, learning_rate=lr)
 ham_mat = generate_hamiltonian_matrix(ham)
-qaoa = QAOA(qubit_num, depth, optimizer=optimizer, problem=ham_mat, )
+qaoa = QAOA(ham_mat, optimizer, depth)
+
 
 loss = qaoa.run(mode='torch', grad_method='backprop')[-1]
 
-backend = get_basic_simulator()
-config = BasicSimulatorConfig()
-config.configure_shots(1024)
-result = qaoa.get_measurements(backend, config)
-print(result.counts)
+result = qaoa.optimized_result
+print(result.probabilities)

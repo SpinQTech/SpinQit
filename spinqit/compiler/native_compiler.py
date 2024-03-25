@@ -87,10 +87,8 @@ class NativeCompiler(Compiler):
                 self.add_definition_cluster(ir, gate, len(inst.params), len(inst.qubits), len(inst.clbits))
                 vindex = ir.add_caller_node(gate.label, inst.params, inst.qubits)
                 ir.add_caller_matrix(vindex, unitary, ctrl_bits)
-        elif isinstance(gate, InverseGate) and (isinstance(gate.base_gate, MatrixGate) or
-            gate.base_gate in IR.basis_set):  
+        elif isinstance(gate, InverseGate) and isinstance(gate.base_gate, MatrixGate): 
             unitary = gate.base_gate.get_matrix(*inst.params)
-            # print(gate.base_gate.label)
             inverse_flag = True
             ctrl_bits = 0
             cur_gate = gate.sub_gate
@@ -157,19 +155,4 @@ class NativeCompiler(Compiler):
 
         manager = PassManager(level)
         manager.run(ir)
-        _check_trainable_node(ir)
         return ir
-
-
-def _check_trainable_node(ir):
-    """
-    For the trainable node, add 'trainable' attributes to the node
-    Store the func for `coeff` and update the param
-    """
-    for v in ir.dag.vs:
-        if 'params' in v.attributes() and isinstance(v['params'], np.ndarray):
-            if getattr(v['params'], 'trainable', None):
-                v['trainable'] = v['params'].func
-
-            # Convert np.ndarray to List
-            v['params'] = list(_flatten((v['params'].tolist(),)))

@@ -25,7 +25,7 @@ def _unitary_matrix(x, y):
 class TwoQubitStatePreparationGateBuilder(GateBuilder):
     """
     Arbitrary 2-qubit state preparation
-    This class supported both density matrix and state vector
+    This class supports both density matrix and state vector
 
     For more details, see the article:
         1. scar Perdomo, Nelson Castaneda, and Roger Vogeler.

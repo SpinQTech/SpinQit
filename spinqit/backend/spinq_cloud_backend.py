@@ -11,43 +11,77 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from typing import List, Optional
+import base64
+import functools
+import time
+import numpy as onp
+from math import pi
+from datetime import datetime
+from copy import deepcopy
+from autoray import numpy as ar
+from scipy import sparse
+from Crypto.Hash import SHA256
+from Crypto.Signature import PKCS1_v1_5 as Signature_pkcs1_v1_5
+from Crypto.PublicKey import RSA
 
 from spinqit.backend.client.spinq_cloud_client import SpinQCloudClient
 from spinqit.model.spinqCloud.platform import *
 from spinqit.model.spinqCloud.task import Task
+from spinqit.model.parameter import LazyParameter
 from spinqit.model.spinqCloud.circuit import graph_to_circuit, convert_cz
 from spinqit.model.exceptions import *
-from spinqit.compiler.ir import NodeType, IntermediateRepresentation
-from spinqit.model.basic_gate import GateBuilder
-from spinqit.model import I, H, X, Y, Z, Rx, Ry, Rz, P, T, Td, S, Sd, CX, CNOT, CY, CZ, CP, SWAP, CCX, U, MEASURE #, BARRIER
+from spinqit.model import Ry, Rz, P, T, Td, S, Sd, CP, SWAP, CCX, U, MEASURE, StateVector
 from spinqit.model import Instruction
+from spinqit.compiler.ir import NodeType, IntermediateRepresentation
+from spinqit.grad import grad_func_hardware
+from .backend_util import get_graph_capsule, _add_pauli_gate
 from .layout import generate_direct_layout, generate_routing_layout, collect_gate_qubits, generate_lookahead_routing
-from typing import List, Optional
-from math import pi
-from threading import Thread
-from datetime import datetime
-import json
-import pdb
+from ..primitive import PauliBuilder, calculate_pauli_expectation, pauli_decompose
+from ..utils.function import requires_grad
 
-# CNOT convert to CZ
-CNOT_converter_builder = GateBuilder(2)
-CNOT_converter_builder.append(H, [1])
-CNOT_converter_builder.append(CZ, [0, 1])
-CNOT_converter_builder.append(H, [1])
-CNOT_converter = CNOT_converter_builder.to_gate()
+class SpinQCloudConfig:
+    def __init__(self):
+        self.metadata = {}
+    def configure_platform(self, platform_code: str):
+        self.metadata['platform'] = platform_code
+    def configure_shots(self, shots: int):
+        self.metadata['shots'] = shots
+    def configure_measure_qubits(self, mqubits: List):
+        self.metadata['mqubits'] = mqubits
+    def configure_task(self, task_name: str, task_desc: str):
+        self.metadata['task_name'] = task_name
+        self.metadata['task_desc'] = task_desc
+    def configure_density_matrix(self, calc_matrix: bool):
+        self.metadata['calc_matrix'] = calc_matrix
+    def configure_process_now(self, process_now: bool):
+        self.metadata['process_now'] = process_now
 
-# CZ convert to CNOT
-CZ_converter_builder = GateBuilder(2)
-CZ_converter_builder.append(H, [1])
-CZ_converter_builder.append(CX, [0, 1])
-CZ_converter_builder.append(H, [1])
-CZ_converter = CZ_converter_builder.to_gate()
+class SpinQCloudResult:
+    def __init__(self, task_name: str, platform: str):
+        self.task_name = task_name
+        self.platform = platform
+        self.probabilities = None
 
 class SpinQCloudBackend:
-    def __init__(self, username: str, signature: str) -> None:
+    MAX_RETRIES = 3
+
+    def __init__(self, username: str, keyfile: str):
+        message = username.encode(encoding="utf-8")
+        with open(keyfile) as f:
+            key = f.read()
+
+        rsakey = RSA.importKey(key)
+        signer = Signature_pkcs1_v1_5.new(rsakey)
+        digest = SHA256.new()
+        digest.update(message)
+        # printable = digest.hexdigest()
+        sign = signer.sign(digest)
+        signature = base64.b64encode(sign)
+        signature = str(signature, encoding = "utf-8")
         self._api_client = SpinQCloudClient(username, signature)
         self._platforms = []
-        self.__qubit_mapping = None
+        # self.__qubit_mapping = None
         self._login()
         self.refresh_remote_platforms()
 
@@ -114,8 +148,6 @@ class SpinQCloudBackend:
                     qubits, clbits = self.__qubits_and_clbits(v)
                     subgates = []
                     if v['type'] == NodeType.op.value:
-                        # for sg, qidx, pexp in U.factors:
-                        #     subgates.append(Instruction(sg, [qubits[i] for i in qidx], clbits, pexp(v['params'])))
                         subgates.append(Instruction(Rz, qubits, clbits, v['params'][2]))
                         subgates.append(Instruction(Ry, qubits, clbits, v['params'][0]))
                         subgates.append(Instruction(Rz, qubits, clbits, v['params'][1]))
@@ -185,6 +217,8 @@ class SpinQCloudBackend:
                         i -= 1
                     elif platform_code == Gemini.code:
                         raise CircuitOperationValidationError("Current platform does not support " + v['name'] + " gate.")
+                elif v['name'] == StateVector.label:
+                    raise CircuitOperationValidationError("Current platform does not support " + v['name'] + " gate.")
             i += 1
 
     def refresh_remote_platforms(self):
@@ -245,7 +279,7 @@ class SpinQCloudBackend:
         circuit = graph_to_circuit(ir, init_mapping.log_to_phy, p, swap_fixes, gate_updates)
         return circuit, qubit_mapping
 
-    def submit_task(self, platform_code: str, ir: IntermediateRepresentation, name: str = "Utitled Task", calc_matrix: bool = False, shots: Optional[int] = None, process_now: bool = True, description: str = None):
+    def submit_task(self, platform_code: str, ir: IntermediateRepresentation, name: str = "Untitled Task", calc_matrix: bool = False, shots: Optional[int] = None, process_now: bool = True, description: str = None):
         platform = self.get_platform(platform_code)
         if platform.machine_count > 0:
             circuit, qubit_mapping = self.transpile(platform_code, ir)
@@ -288,6 +322,37 @@ class SpinQCloudBackend:
         else:
             raise SpinQCloudServerError("Retrieve task failed.")
 
+    def execute(self, ir, config):
+        '''
+        We do not process density matrix for now. This execute method is synchronous and there must be a result.
+        '''
+        task_name = 'Untitled Task' if 'task_name' not in config.metadata else config.metadata['task_name']
+        for i in range(SpinQCloudBackend.MAX_RETRIES):
+            try:
+                task = self.submit_task(config.metadata['platform'], ir, name=task_name, 
+                                        shots=config.metadata['shots'], description = config.metadata['task_desc'])
+                result = SpinQCloudResult(task_name, config.metadata['platform'])
+                result.probabilities = task.get_result()
+                break
+            except Exception as e:
+                if i < SpinQCloudBackend.MAX_RETRIES - 1:
+                    time.sleep(3)
+                else:
+                    print('Max retries exceeded. Execution failed.')
+                    raise 
+        return result
+
+    def get_value_and_grad_fn(self, ir, config, measure_op=None, place_holder=None, grad_method=None):
+        def value_and_grad_fn(params):
+            params_for_grad = self.process_params(params)
+            self.check_node(ir, place_holder)
+            self.update_param(ir, params_for_grad)
+            val, res = self.evaluate(ir, config, measure_op)
+            backward_fn = grad_func_hardware(deepcopy(ir), params_for_grad, config, self, measure_op, res, grad_method)
+            return val, backward_fn
+
+        return value_and_grad_fn
+
     def __qubits_and_clbits(self, v):
             edges = v.in_edges()
             # in edges order must be the same as the bit order in register to func works correctly
@@ -300,3 +365,83 @@ class SpinQCloudBackend:
                 elif 'clbit' in e.attributes() and e['clbit'] is not None:
                     clbits.append(e['clbit'])
             return qubits, clbits
+
+    def evaluate(self, ir, config, measure_op):
+        if measure_op is None:
+            raise ValueError(
+                'The measure_op should not be None.'
+            )
+        if measure_op.mqubits is not None:
+            config.configure_measure_qubits(measure_op.mqubits)
+
+        if measure_op.mtype == 'expval':
+            hamiltonian = measure_op.hamiltonian
+            if isinstance(hamiltonian, (onp.ndarray, sparse.csr_matrix)):
+                if isinstance(hamiltonian, sparse.csr_matrix):
+                    hamiltonian = hamiltonian.A
+                hamiltonian = pauli_decompose(hamiltonian)
+            value = 0.0
+            mqubits = config.metadata['mqubits'] if 'mqubits' in config.metadata else list(range(ir.qnum))
+            for pstr, coeff in hamiltonian:
+                h_part = PauliBuilder(pstr).to_gate()
+                node_idx = _add_pauli_gate(h_part, mqubits, ir)
+                result = self.execute(ir, config)                
+                ir.remove_nodes(node_idx)
+                value += coeff * calculate_pauli_expectation(pstr, result.probabilities)
+            return value, None
+        elif measure_op.mtype == 'prob':
+            res = self.execute(ir, config)
+            if 'mqubits' in config.metadata:
+                np_probs = onp.zeros(2 ** (len(config.metadata['mqubits'])))
+            else:
+                np_probs = onp.zeros(2**ir.qnum, dtype=float)
+            for k, v in res.probabilities.items():
+                idx = int(k, 2)
+                np_probs[idx] = v
+            value = np_probs
+        else:
+            raise ValueError(
+                f'The wrong measure_op.mtype expected `prob`, `expval`, `count`, `state`, but got {measure_op.mtype}'
+            )
+        return value, res
+
+    @staticmethod
+    def update_param(ir, new_params):
+        """
+        Updating the trainable params
+        """
+        if new_params is not None:
+            for v in ir.dag.vs:
+                if 'func' in v.attributes() and v['func'] is not None:
+                    func = v['func']
+                    _params = []
+                    for f in func:
+                        if callable(f):
+                            _p = f(new_params)
+                        else:
+                            _p = f
+                        _params.append(_p)
+                    v['params'] = _params
+
+    @staticmethod
+    def process_params(new_params):
+        execute_params = []
+        for param in new_params:
+            execute_params.append(ar.asarray(param, like='spinq', trainable=requires_grad(param)))
+        return execute_params
+
+    @functools.lru_cache
+    def check_node(self, ir, place_holder):
+        # self.assemble(ir)
+        if place_holder is not None:
+            for v in ir.dag.vs:
+                if v['type'] in [0, 1] and 'params' in v.attributes() and v['params'] is not None \
+                        and any(isinstance(p, LazyParameter) for p in v['params']):
+                    params = v['params']
+                    record_function = []
+                    for p in params:
+                        if isinstance(p, LazyParameter):
+                            record_function.append(p.get_function(place_holder))
+                        else:
+                            record_function.append(p)
+                    v['func'] = record_function if len(record_function) > 0 else None

@@ -136,7 +136,7 @@ void Nmr::expand_caller(const igraph_t *g, const char *gate_name, igraph_vector_
         } else {
             int qb0 = (int)VECTOR(qubit_list)[0];
             if (qsize == 1) {
-                gate_time_slot = time_list[qb0];
+                gate_time_slot = update_timelist(time_list, {qb0});
                 if (igraph_vector_size(&param_list) > 0) {
                     igraph_real_t theta = VECTOR(param_list)[0];
                     double angle = radian_to_angle((double)theta);

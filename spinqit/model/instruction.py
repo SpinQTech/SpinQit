@@ -15,28 +15,27 @@
 from typing import List, Tuple, Union
 from .basic_gate import Gate
 import numpy as np
-from spinqit.utils.function import _flatten
+from .parameter import LazyParameter
+from spinqit.utils.function import to_list
 
 
 class Instruction(object):
-    def __init__(self, gate: Gate, qubits=None, clbits=None, *params: Tuple):
-        if clbits is None:
-            clbits = []
-        if qubits is None:
-            qubits = []
+    def __init__(self, gate: Gate, qubits=[], clbits=[], *params: Tuple):
         self.gate = gate
         self.qubits = qubits
         self.clbits = clbits
 
-        if len(params) == 1 and isinstance(*params, (type(None), np.ndarray)):
-            self.params = params[0]
-        # elif len(params) == 1 and (isinstance(params[0], (float, int,)) or callable(*params)):
-        #     self.params = [*params]
-        else:
-            self.params = list(_flatten(params))
+        params = to_list(params)
+        self.params = params
+        if len(params) == 1:
+            if params[0] is None:
+                self.params = []
+            # elif isinstance(params[0], LazyParameter):
+            #     self.params = params[0]
+        
         self.condition = None
 
-        if len(qubits) != gate.qubit_num and gate.label not in ['MEASURE', 'BARRIER']:
+        if len(qubits) != gate.qubit_num and gate.label not in ['MEASURE', 'BARRIER', 'StateVector']:
             raise ValueError('The number of qubits does not match the gate.')
 
     def set_condition(self, clbits: Union[List, int], symbol: str, constant: int):

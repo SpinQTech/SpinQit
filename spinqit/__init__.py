@@ -17,3 +17,4 @@ from .backend import *
 from .compiler import get_compiler
 from .primitive import *
 from .view import *
+from .solver import *

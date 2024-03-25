@@ -11,12 +11,12 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from typing import List
+from typing import List, Union
 import numpy as np
 
 from spinqit.model import GateBuilder, Rz, Ry, Rx, H, X, Ph
 from spinqit.compiler.decomposer import decompose_zyz, build_gate_for_isometry
-from spinqit.model import Instruction
+from spinqit.model import Instruction, PlaceHolder
 from spinqit.model.Ising_gate import Z_IsingGateBuilder
 from .multi_controlled_gate_builder import MultiControlledGateBuilder
 
@@ -27,7 +27,7 @@ _EPS = 1e-10
 def amplitude_encoding(vector: np.ndarray, qubits: List) -> List[Instruction]:
     if len(vector.shape) == 1:
         vector = vector.reshape(vector.shape[0], 1)
-
+    
     nb = int(np.log2(len(vector)))
     if nb != len(qubits):
         raise ValueError
@@ -51,7 +51,7 @@ def amplitude_encoding(vector: np.ndarray, qubits: List) -> List[Instruction]:
             inst_list.append(Instruction(Ph, qubits, [], phase))
     else:
         gate = build_gate_for_isometry(vector)
-        inst_list.append(Instruction(gate, qubits[::-1]))
+        inst_list.append(Instruction(gate, qubits))
 
     return inst_list
 
@@ -94,7 +94,7 @@ def dfs_amplitude_encoding(vector, qubits):
     return [Instruction(gate_builder.to_gate(), qubits)]
 
 
-def angle_encoding(vector: np.ndarray, qubits: List, depth=1, rotate_gate='ry') -> List[Instruction]:
+def angle_encoding(vector: Union[np.ndarray, PlaceHolder], qubits: List, depth=1, rotate_gate='ry') -> List[Instruction]:
     r"""
     angle encoding with rotation gates
     """
@@ -117,17 +117,17 @@ def angle_encoding(vector: np.ndarray, qubits: List, depth=1, rotate_gate='ry') 
     return inst_list
 
 
-def iqp_encoding(vector: np.ndarray, qubits: List, depth: int=1, ring_pattern: bool=False) -> List[Instruction]:
+def iqp_encoding(vector: Union[np.ndarray, PlaceHolder], qubits: List, depth: int=1, ring_pattern: bool=False) -> List[Instruction]:
     r"""
     Args:
-        vector (np.ndarray): The vector that want to encode
+        vector (np.ndarray or PlaceHolder): The vector that want to encode
         qubits (list): qubits list
         depth (int) : The
         ring_pattern (bool): False.
                     when pattern is `ring`, apply rzz gates onto the first and last qubits.
     """
     if len(vector.shape) == 1:
-        vector = vector.reshape(vector.shape[0], 1)
+        vector = vector.reshape((vector.shape[0], 1))
 
     inst_list = []
 
@@ -152,4 +152,12 @@ def iqp_encoding(vector: np.ndarray, qubits: List, depth: int=1, ring_pattern: b
     return inst_list
 
 
+def basis_encoding(vector:np.ndarray, qubits:List) -> List[Instruction]:
+    inst_list = []
+    if any(x != 0 and x != 1 for x in vector):
+        raise ValueError
+    for i in range(vector):
+        if vector[i] == 1:
+            inst_list.append(Instruction(X, qubits[i]))
+    return inst_list
 

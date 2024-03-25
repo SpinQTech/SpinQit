@@ -34,6 +34,7 @@ namespace py = pybind11;
 #include <map>
 #include <queue>
 #include <sstream>
+#include <iterator>
 #include <iostream>
 #include <thread>
 #include <future>
@@ -41,9 +42,7 @@ namespace py = pybind11;
 #include <math.h>
 using namespace std;
 
-#ifdef _WIN64
 #include "SpinQuasar.h"
-#endif
 
 extern "C" {
 #include "util/graph_attributes.h"
@@ -53,8 +52,7 @@ extern "C" {
 inline string convert_to_binary(size_t i, size_t n)
 {
     std::ostringstream oss;
-    for (size_t j=n; j>=1; j--) {
-        size_t pos = n - j;
+    for (size_t j=1; j<=n; j++) {
         oss << ((i>>(j-1)) & 1);
     }
     return oss.str();
@@ -103,6 +101,12 @@ public:
             task_desc = tdobj.cast<string>();
         }
 
+        re.shots = 1024;
+        if (config.contains("shots")) {
+            py::object sobj = config["shots"];
+            re.shots = sobj.cast<int>();
+        }
+
         bool verbose = false;
         if (config.contains("print_circuit")) {
             py::object pcobj = config["print_circuit"];
@@ -114,26 +118,43 @@ public:
         int qnum = translate(gptr, gate_map);
 
         stringstream ss;
-        ss << "[";
+        ss << "{\"gates\":[";
         for (size_t j = 0; j < gate_map.size()-1; j++) {
             ss << gate_map[j].to_string();
             ss << ",\n";
         }
         ss << gate_map[gate_map.size()-1].to_string();
         ss << "]";
+        int rlen = qnum;
+        if (config.contains("mqubits")) {
+            py::list mlist = config["mqubits"];
+            rlen = mlist.size();
+            ss << ",\n\"measures\":[";
+            vector<int> mflags(qnum, 0);
+            for (size_t i = 0; i < mlist.size(); ++i) {
+                py::object elem = mlist[i];
+                mflags[elem.cast<int>()] = 1;
+            }
+            std::copy(mflags.begin(), mflags.end()-1, std::ostream_iterator<int>(ss, ","));
+            ss << mflags.back();
+            ss << "]";
+        }
+        ss << "}";
         string circuit_str = ss.str();
         if (verbose)
             cout<< circuit_str << endl;
         
         vector<double> probabilities;
-        #ifdef _WIN64
-            SpinQuasar::init(ip, port, username, password);
-            probabilities = SpinQuasar::nmr_run(task_name, task_desc, circuit_str, qnum);
-        #endif
+
+        SpinQuasar::init(ip, port, username, password);
+        probabilities = SpinQuasar::nmr_run(task_name, task_desc, circuit_str, qnum);
+
         size_t sz = probabilities.size();
         for (size_t i = 0; i < sz; i++) {
-            string key = convert_to_binary(i, qnum);
-            re.probabilities[key] = probabilities[i];
+            if (probabilities[i] > epsilon) {
+                string key = convert_to_binary(i, rlen);
+                re.probabilities[key] = probabilities[i];
+            }
         }
 
         return re;

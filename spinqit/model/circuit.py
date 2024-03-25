@@ -11,36 +11,48 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import warnings
-from copy import deepcopy
-# from torch import Tensor
-import numpy as np
 from spinqit.model.gates import MEASURE
-from typing import List, Tuple, Union
-from .basic_gate import Gate
+from typing import List, Tuple, Union, Iterable
+from .basic_gate import Gate, GateBuilder
 from .instruction import Instruction
 from .register import QuantumRegister, ClassicalRegister
-from .parameter import Parameter, ParameterExpression
-from spinqit.utils.function import _flatten
+from .parameter import LazyParameter, PlaceHolder
+from spinqit.utils.function import to_list
 
 
 class Circuit(object):
-    def __init__(self, params=None):
-        if params is not None:
-            if not isinstance(params, (Parameter, int)):
-                raise ValueError(
-                    'The type of parameter should be `spinqit.Parameter or `int`'
-                )
-            if isinstance(params, Parameter) and len(params.shape) > 1:
-                warnings.warn('The parameter will be reshape to 1-dimensions')
-                params = params.reshape(-1)
+    """
+    The quantum circuit for spinqit, Includes parameterized circuit.
 
-            if isinstance(params, int):
-                params = Parameter(np.random.uniform(0, 2 * np.pi, size=params), trainable=True)
-        else:
-            params = np.array([])
+    The following example shows how to construct a parameterized circuit,
 
-        self.__params = params
+    Example:
+        from spinqit import Circuit, U, Rx, Ry
+        from spinqit.algorithm.qlayer import to_qlayer
+        from spinqit.algorithm.loss.measurement import expval
+        from spinqit.model.parameter import Parameter
+
+        @to_qlayer(backend_mode='spinq', grad_method='param_shift', measure=expval([('ZZ', 1)]))
+        def build_circuit(x_shape, y_shape):
+            circuit = Circuit()
+            circuit.allocateQubits(2)
+            x = circuit.add_params(shape=x_shape) #, argnum=(0,))
+            y = circuit.add_params(shape=y_shape) #, argnum=(1,))
+            circuit << (U,  [0], [y[0], np.pi, y[2]])
+            circuit << (Rx, [0], x[0])
+            circuit << (Ry, [1], x[0] ** 2 + y[1])
+            return circuit
+        circuit = build_circuit(3, 3)
+        x = Parameter([1., 2, 3], trainable=True)
+        y = Parameter([4., 5, 6,], trainable=False)
+        print(circuit(x, y))
+        # -0.3390986890824953
+    """
+
+    def __init__(self, name='circuit'):
+        self.name = name
+        self.__argnum = 0
+        self.place_holder = []
         self.__qubits_num = 0
         self.__clbits_num = 0
         self.__qureg_list = []
@@ -64,6 +76,10 @@ class Circuit(object):
         return self.__clreg_list
 
     @property
+    def argnum(self):
+        return self.__argnum
+
+    @property
     def instructions(self):
         return self.__instructions
 
@@ -71,33 +87,38 @@ class Circuit(object):
     def instructions(self, new_instructions):
         self.__instructions = new_instructions
 
-    @property
-    def params(self):
-        return self.__params
+    def add_params(self, shape, backend='spinq') -> PlaceHolder:
+        """
+        Add the parameter's information for the parameterized circuit.
+        It will return a PlaceHolder(LazyParameter) to record the functions for this added params.
+        Notice that it is not a true parameter for circuit.
 
-    @params.setter
-    def params(self, new_params):
-        try:
-            from torch import Tensor
-            if isinstance(new_params, Tensor):
-                if new_params.is_cuda:
-                    new_params = new_params.cpu()
-                if new_params.requires_grad:
-                    new_params = new_params.detach()
-        except Exception as e:
-            pass
-        if not isinstance(new_params, Parameter):
-            new_params = Parameter(new_params, trainable=True)
-        for ins in self.instructions:
-            if isinstance(ins.params, Parameter) and getattr(ins.params, 'trainable'):
-                func = ins.params.func
-                _p = func(new_params)
-                ins.params = _p
-        self.__params = new_params
+        Args:
+            shape(int, tuple): The shape for the parameter
+            backend(str): choose the backend for quantum circuit.
 
-    @property
-    def qubits(self):
-        return [i for i in range(self.__qubits_num)]
+        Example:
+            from spinqit import Circuit
+            from spinqit.model.parameter import Parameter
+
+            circuit = Circuit()
+            x = circuit.add_params(shape=(3,))
+            print(x)
+            # <PlaceHolder(fn=None, shape=(3,), dtype=None, backend='autograd')>
+        """
+        if isinstance(shape, int):
+            shape = (shape,)
+        elif isinstance(shape, Iterable):
+            shape = tuple(shape)
+        else:
+            raise ValueError(
+                f'The shape should be type`int` or type`Iterable`, but got {type(shape)}'
+            )
+        argnum = (self.__argnum,)
+        self.__argnum += 1
+        place_holder = PlaceHolder(shape, backend)
+        self.place_holder.append((argnum, place_holder))
+        return place_holder
 
     def allocateQubits(self, num: int):
         reg = QuantumRegister(num, self.__qubits_num)
@@ -111,49 +132,11 @@ class Circuit(object):
         self.__clbits_num += num
         return reg
 
-    def __add__(self, other: 'Circuit'):
-        other_circ = deepcopy(other)
-
-        if self.qubits_num < other.qubits_num:
-            self.allocateQubits(other.qubits_num - self.qubits_num)
-        if self.clbits_num < other.clbits_num:
-            self.allocateClbits(other.clbits_num - self.clbits_num)
-
-        self.__concatenate_params(other_circ)
-        self.extend(other_circ.instructions)
-        return self
-
-    def __concatenate_params(self, other):
-        new_params = Parameter(np.concatenate((self.params, other.params)), trainable=True)
-        new_func = ParameterExpression(
-            lambda x, start=self.params.size, end=new_params.size:
-            x[start:end]
-        )
-        for ins in other.instructions:
-            if isinstance(ins.params, Parameter) and getattr(ins.params, 'trainable'):
-                _p = ins.params.func(new_func(new_params))
-                ins.params = _p
-        self.__params = new_params
-
     def __lshift__(self, other: Tuple):
         gate = other[0]
-        qubits = list(_flatten((other[1],)))
-        p = other[2:]
-        if not any(callable(x) for x in p):
-            self.append(gate, qubits, [], *p)
-        else:
-            params = self.params
-            if params.size == 0:
-                raise ValueError(
-                    'There is no parameter in the circuit.'
-                )
-            if not isinstance(p[0], ParameterExpression):
-                plambda = ParameterExpression(p[0])
-            else:
-                plambda = p[0]
-            sub_param = plambda(params)
-            self.append(gate, qubits, [], sub_param)
-        return self
+        qubits = to_list(other[1])
+        param = other[2:]
+        self.append(gate, qubits, [], *param)
 
     def __or__(self, other: Tuple):
         self.__instructions[-1].set_condition(other[0], other[1], other[2])
@@ -168,7 +151,8 @@ class Circuit(object):
         self.__instructions.append(Instruction(MEASURE, qubits, clbits))
 
     def append(self, gate: Gate, qubits: List[int] = [], clbits: List[int] = [], *params: Tuple):
-        self.__instructions.append(Instruction(gate, qubits, clbits, *params))
+        inst = Instruction(gate, qubits, clbits, *params)
+        self.__instructions.append(inst)
 
     def append_instruction(self, inst: Instruction):
         self.__instructions.append(inst)
@@ -176,3 +160,41 @@ class Circuit(object):
     def extend(self, inst_list: List):
         for inst in inst_list:
             self.append_instruction(inst)
+
+    # def to_gate(self):
+    #     """
+    #     Convert circuit to gate. This function is for the circuit concatenate
+    #     """
+    #     circuit = GateBuilder(self.qubits_num, self.name)
+    #     place_holder = tuple(x[1] for x in sorted(self.place_holder, key=lambda x: x[0]))
+    #     for inst in self.instructions:
+    #         new_param = []
+    #         if inst.params is not None:
+    #             for param in inst.params:
+    #                 if isinstance(param, LazyParameter):
+    #                     plambda = param.get_function(place_holder)                        
+    #                     new_param.append(plambda)
+    #                 else:
+    #                     new_param.append(param)
+    #         circuit.append(inst.gate, inst.qubits, new_param)
+    #     return circuit.to_gate()
+
+    def catenate(self, circuit, qubit_map = None):
+        if self.__qubits_num < circuit.qubits_num:
+            self.__qubits_num = circuit.qubits_num
+            self.__qureg_list = circuit.qureg_list
+        if self.__clbits_num < circuit.clbits_num:
+            self.__clbits_num = circuit.clbits_num
+            self.__clreg_list = circuit.clreg_list
+        # update argnum
+        for nt, holder in circuit.place_holder:
+            self.place_holder.append(((nt[0]+self.__argnum,), holder))
+        self.__argnum += circuit.argnum
+        # update qubit index
+        if qubit_map is not None:
+            for inst in circuit.instructions:
+                inst.qubits = [qubit_map[q] for q in inst.qubits]
+                inst.clbits = [qubit_map[q] for q in inst.clbits]
+        self.instructions.extend(circuit.instructions)
+
+

@@ -32,6 +32,7 @@ using namespace std;
 class SpinQuasar {
 private:
     static bool running;
+    static bool loggedon;
     static vector<double> probabilities;
     static string username;
     static string password;

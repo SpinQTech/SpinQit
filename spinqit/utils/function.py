@@ -14,11 +14,14 @@
 
 import numbers
 import warnings
-from typing import Iterable
+import queue
+from typing import Iterable, List
 
 import numpy as np
 import scipy.sparse.linalg
 from scipy import sparse
+
+from spinqit.model.parameter import LazyParameter
 
 
 def schmidt_decompose(psi,
@@ -116,11 +119,16 @@ def calculate_phase(mat1, mat2):
 
 
 def _flatten(x):
-    if isinstance(x, np.ndarray):
+    if isinstance(x, LazyParameter):
+        yield x
+    elif isinstance(x, np.ndarray):
         yield from _flatten(x.flat)
     elif isinstance(x, Iterable) and not isinstance(x, (str, bytes)):
-        for item in x:
-            yield from _flatten(item)
+        try:
+            for item in x:
+                yield from _flatten(item)
+        except TypeError:
+            yield x
     else:
         yield x
 
@@ -150,3 +158,89 @@ def unflatten(flat, model):
     if len(tail) != 0:
         raise ValueError("Flattened iterable has more elements than the model.")
     return res
+
+
+def _topological_sort(graph) -> List[int]:
+    indegree_table = [0] * graph.vcount()
+    for i in range(graph.vcount()):
+        indegree_table[i] = graph.vs[i].indegree()
+    registers = graph.vs.select(type=4)
+    vids = []
+    vq = queue.Queue()
+    for r in registers:
+        vq.put(r.index)
+    while not vq.empty():
+        vid = vq.get()
+        vids.append(vid)
+        neighbors = graph.neighbors(vid, mode="out")
+        for n in neighbors:
+            indegree_table[n] -= 1
+            if indegree_table[n] == 0:
+                vq.put(n)
+    return vids
+
+
+def to_list(*x):
+    return list(_flatten(x))
+
+
+def _dfs(root_index: int, graph, visited, result: List):
+    successors = graph.neighbors(root_index, mode='out')
+    for s in successors:
+        if s not in visited:
+            _dfs(s, graph, visited, result)
+    result.append(root_index)
+    visited.add(root_index)
+
+
+def get_interface(tensor):
+    """Returns the name of the package that any array/tensor manipulations
+    will dispatch to.
+
+    Args:
+        tensor (tensor_like): tensor input
+
+    Returns:
+        str: name of the interface
+    """
+    import autoray as ar
+    namespace = tensor.__class__.__module__.split(".")[0]
+
+    if namespace in ("spinqit", "autograd"):
+        return "spinq"
+
+    res = ar.infer_backend(tensor)
+
+    if res == "builtins":
+        return "numpy"
+
+    return res
+
+
+def requires_grad(params):
+    interface = get_interface(params)
+    if interface == "tensorflow":
+        return getattr(params, "trainable", False)
+        # import tensorflow as tf
+
+        # try:
+        #     from tensorflow.python.eager.tape import should_record_backprop
+        # except ImportError:  # pragma: no cover
+        #     from tensorflow.python.eager.tape import should_record as should_record_backprop
+
+        # return should_record_backprop([tf.convert_to_tensor(params)])
+
+    if interface == "spinq":
+        return getattr(params, "trainable", False)
+
+    if interface == "torch":
+        return getattr(params, "requires_grad", False)
+
+    if interface == "paddle":
+        return not getattr(params, "stop_gradient", True)
+
+    if interface == "jax":
+        import jax
+
+        return isinstance(params, jax.core.Tracer)
+    return False

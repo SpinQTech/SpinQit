@@ -11,21 +11,24 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
-import time
-
-import numpy as np
-import torch
-from ..torch_interface import QuantumModel
-
-from spinqit.algorithm.expval import ExpvalCost
+try:
+    import torch
+    IMPORTED = True
+except ImportError:
+    IMPORTED = False
+from spinqit.interface.qlayer import QLayer
+from .utils import optimizer_timer
 from ..optimizer import Optimizer
+from ...model.parameter import Parameter
+from ...utils import requires_grad
 
-optim_map = {'NAdam': torch.optim.NAdam,
-             'Adam': torch.optim.Adam,
-             'SGD': torch.optim.SGD,
-             'AdamW': torch.optim.AdamW,
-             'Adagrad': torch.optim.Adagrad}
+if IMPORTED:
+    optim_map = {'NAdam': torch.optim.NAdam,
+                 'Adam': torch.optim.Adam,
+                 'SGD': torch.optim.SGD,
+                 'AdamW': torch.optim.AdamW,
+                 'Adagrad': torch.optim.Adagrad,
+                 'RMSprop': torch.optim.RMSprop}
 
 
 class TorchOptimizer(Optimizer):
@@ -35,50 +38,69 @@ class TorchOptimizer(Optimizer):
                  learning_rate: float = 0.01,
                  verbose: bool = True,
                  optim_type='NAdam',
-                 *args, **kwargs):
+                 **kwargs):
         super().__init__()
 
-        self.optim_type = optim_type
+        self._optim_type = optim_type
         self.__maxiter = maxiter
         self.__tolerance = tolerance
-        self.__verbose = verbose
+        self._verbose = verbose
+        self._step = 1
         self.__learning_rate = learning_rate
-        self.__args = args
         self.__kwargs = kwargs
-        self.model = None
-        self.optimizer = None
+        self._optimizer = None
 
-    def set_model(self, model):
-        if isinstance(model, ExpvalCost):
-            model = QuantumModel(model)
-        elif isinstance(model, torch.nn.Module):
-            model = model
-        else:
-            raise NotImplementedError(f'The model type `{type(model)}` are not supported')
-        optimizer = optim_map[self.optim_type]
-        optimizer = optimizer(model.parameters(), lr=self.__learning_rate, *self.__args, **self.__kwargs)
-        self.model = model
-        self.optimizer = optimizer
-
-    def optimize(self, model):
-        self.set_model(model)
+    def optimize(self, qlayer, *params):
+        if not IMPORTED:
+            raise ValueError(
+                'To use Torch Optimizer, you should install pytorch first.'
+            )
+        if not isinstance(qlayer, QLayer):
+            raise ValueError(
+                'The qlayer parameter must be Qlayer.'
+            )
+        origin_interface = qlayer.interface
+        qlayer.interface = 'torch'
+        execute_params = self.reset(params)
         loss_list = []
-        for step in range(1, self.__maxiter + 1):
-            start = time.time()
-            loss = self.step()
-            end = time.time()
-            if self.__verbose:
-                print('Optimize: step {}, loss: {}, time: {}s'.format(step, loss, end - start))
-            if loss_list and np.abs(loss - loss_list[-1]) < self.__tolerance:
-                if self.__verbose:
-                    print(f'The loss difference less than {self.__tolerance}. Optimize done')
+        while self._step <= self.__maxiter + 1:
+            loss = self.step_and_cost(qlayer, execute_params)
+            if self.check_optimize_done(loss, loss_list):
+                qlayer.interface = origin_interface
                 break
-            loss_list.append(loss)
+            self._step += 1
         return loss_list
 
-    def step(self, ):
-        self.optimizer.zero_grad(set_to_none=True)
-        loss = self.model()
+    @optimizer_timer
+    def step_and_cost(self, qlayer, params):
+        self._optimizer.zero_grad(set_to_none=True)
+        loss = qlayer(*params)
         loss.backward()
-        self.optimizer.step()
+        self._optimizer.step()
         return loss.item()
+
+    def check_optimize_done(self, loss, loss_list):
+        if loss_list and abs(loss - loss_list[-1]) < self.__tolerance:
+            print(f'The loss difference less than {self.__tolerance}. Optimize done')
+            check = True
+        elif self._step == self.__maxiter:
+            print('The optimized process has been reached the max iteration number.')
+            check = True
+        else:
+            check = False
+        loss_list.append(loss)
+        return check
+
+    def reset(self, params):
+        self._step = 1
+
+        execute_params = []
+        for param in params:
+            if not isinstance(param, (torch.Tensor, Parameter)):
+                raise ValueError(
+                    f'The params should be `torch.Tensor` or `spinqit.Parameter`, but got type{type(param)}'
+                )
+            _params = torch.as_tensor(param).requires_grad_(requires_grad(param))
+            execute_params.append(_params)
+        self._optimizer = optim_map[self._optim_type]((v for v in execute_params), lr=self.__learning_rate, **self.__kwargs)
+        return execute_params

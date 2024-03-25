@@ -24,6 +24,7 @@ def qiskit_fn(qasm, shots=1024, *args, **kwargs):
     qc = QuantumCircuit.from_qasm_str(qasm)
     simulator = Aer.get_backend('statevector_simulator')
     result = execute(qc, simulator, *args, **kwargs).result()
+    #This result follows the qubit order of Qiskit
     print(result.get_statevector())
     qiskit_result = QiskitQasmResult()
     qiskit_result.set_result(result.get_statevector(), shots)
@@ -50,4 +51,5 @@ exe = compiler.compile(circuit, 0)
 config = QasmConfig()
 engine = get_qasm_backend(qiskit_fn)
 states = engine.execute(exe, config).states
+#This result follows the qubit order of SpinQit
 print(states)

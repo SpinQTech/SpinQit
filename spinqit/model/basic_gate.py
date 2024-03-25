@@ -15,7 +15,7 @@
 from typing import Tuple, List, Union, Callable
 import numpy as np
 
-from spinqit.utils.function import _flatten
+from spinqit.utils.function import to_list
 
 
 class Gate(object):
@@ -53,10 +53,9 @@ class Gate(object):
         if self.__matrix is None:
             return None
 
-        if not params or (not any(params)):
+        params = to_list(params)
+        if not params or any(p is None for p in params):
             params = (0,)
-        else:
-            params = tuple(_flatten(params))
         mat = self.__matrix(params)
         if not np.allclose(np.eye(len(mat)), mat.dot(mat.T.conj())):
             raise ValueError("The gate matrix must be unitary.")

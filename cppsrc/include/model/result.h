@@ -28,14 +28,16 @@ class Result
 {
 public:
     map<string, double> probabilities;
-    map<string, int> counts;
     vector<complex<double>> states;
+    int shots;
 public:
     Result();
     ~Result();
+    map<string, int> get_counts();
     string get_random_reading();
 private:
     static int repeat;
+    map<string, int> counts;
     string to_string(long key, size_t qnum);
 };
 #endif

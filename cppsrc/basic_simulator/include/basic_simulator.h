@@ -134,15 +134,13 @@ public:
         }
         
         re.probabilities = std::move(pack_probabilities(ps, bitpos));
-        re.counts = std::move(calc_counts(re.probabilities, shots));
         re.states = std::move(sv);
-    
+        re.shots = shots;
         return re;
     }
     
 private:
     map<string, double> pack_probabilities(const vector<double>& probabilities, const set<int>& mqubits);
-    map<string, int> calc_counts(const map<string, double>& probabilities, int shots);
     vector<set<int>> decompose(const igraph_t* g);
     size_t append_to_timelist(vector<vector<gate_unit>> & time_list, const char* gate_name, const initializer_list<size_t> & qil, const initializer_list<double> & pil, const condition & cond);
     size_t add_measurement(vector<vector<gate_unit>> & time_list, const vector<size_t> & qubits, const vector<size_t> & clbits);

@@ -1,5 +1,5 @@
-/**
- * Copyright 2021 SpinQ Technology Co., Ltd.
+﻿/**
+ * Copyright 2023 SpinQ Technology Co., Ltd.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,6 +16,10 @@
 
 #ifndef SPINQINTERFACE_HH
 #define SPINQINTERFACE_HH
+
+/*  To use this exported function of dll, include this header
+ *  in your project.
+ */
 
 #ifdef BUILD_SPINQINTERFACE_DLL
     #define SPINQ_API __declspec(dllexport)
@@ -74,40 +78,40 @@ SPINQ_API unsigned long long push_task_request(const char* name,
                                                const int qubits);
 
 /**
- * @brief get_task_state: Get the task state
+ * @brief get_task_state: get task state
  * @param task_id：task id
- * @return 1: task finished, 0: task running
+ * @return 1 means the task is finished，0 means not finished
  */
 SPINQ_API int get_task_state(const char* task_id);
 
 /**
- * @brief get_task_result: Get the task result
+ * @brief get_task_result: get task result
  * @param task_id: task id
- * @return task result, when the result is not ready, return NULL
+ * @return task result，return NULL is the result is not ready
  */
 SPINQ_API const char* get_task_result(const char* task_id);
 
 /**
- * @brief set_push_task_response_callback: set push task response callback
+ * @brief set_push_task_response_callback: set the callback function to process the response for pushing task
  */
 SPINQ_API void set_push_task_response_callback(void (*func)(const char*));
 
 /**
- * @brief set_task_finished_post_callback: set task finished post callback
+ * @brief set_task_finished_post_callback: set the callback function to process the message for task finished
  */
 SPINQ_API void set_task_finished_post_callback(void (*func)(const char*));
 
 /**
  * @brief emit_pulse_request: emit pulse request
  * @param json: pulse parameters
- * @param length: pulse parameter length
- * @param pps_flag: whether pps before sending the pulse
+ * @param length: length of pulse parameters
+ * @param pps_flag: whether to prepare a pseudopure state before emitting pulses
  * @param sample_frequence: sample frequence
  * @param sample_points: sample points
- * @param fft_points: FFT data points
- * @param fft_from: FFT data start index
- * @param fft_to: FFT data end index
- * @param channel: channel
+ * @param fft_points: FFT points
+ * @param fft_from: FFT starting index
+ * @param fft_to: FFT ending index
+ * @param channel: channel number
  * @return 0 means successful
  */
 SPINQ_API unsigned long long emit_pulse_request(const char* json,
@@ -121,26 +125,43 @@ SPINQ_API unsigned long long emit_pulse_request(const char* json,
                                                 const int channel);
 
 /**
- * @brief get_sending_pulse_state: get sending pulse state
- * @return pulse sending state
+ * @brief get_emit_pulse_state: get the state of emitting pulse
+ * @return the state of emitting pulse
  */
 SPINQ_API int get_emit_pulse_state(const char* pulse_id);
 
 /**
- * @brief get_sending_pluse_result：get sending pulse result
- * @return pulse sending result, when the result is not ready, return NULL
+ * @brief get_emit_pluse_result：get the result of emitting pulse
+ * @return the result of emitting pulse，return NULL if the result is not ready
  */
 SPINQ_API const char* get_emit_pluse_result(const char *pluse_id);
 
 /**
- * @brief set_emit_pluse_response_callback: set emit pulse response callback
+ * @brief set_emit_pluse_response_callback: set the callback function to process the response of emitting pulse
  */
 SPINQ_API void set_emit_pluse_response_callback(void (*func)(const char*));
 
 /**
- * @brief set_emit_pulse_finished_post_callback: set emit pulse finished post callback
+ * @brief set_emit_pulse_finished_post_callback: set the callbacke to process the message when emitting pulse is done
  */
 SPINQ_API void set_emit_pulse_finished_post_callback(void (*func)(const char*));
+
+/**
+ * @brief set_external_msg_callback: set the callback function to process external messages.
+ */
+SPINQ_API void set_external_msg_callback(void (*func)(const char*));
+
+/**
+ * @brief post_external_msg: the function to post external messages
+ * @para message json
+ * @return 0:sucess etc:failure
+ */
+SPINQ_API int post_external_msg(const char*);
+
+/**
+ * @brief debug_mode:show send_message and received_message
+ */
+SPINQ_API void debug_mode(const bool mode);
 
 #ifdef __cplusplus
 }

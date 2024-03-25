@@ -1,21 +1,32 @@
-from copy import deepcopy
-from functools import reduce
-
+# Copyright 2023 SpinQ Technology Co., Ltd.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 import numpy as onp
-from autograd import numpy as _np
+from autograd import numpy as anp
+from autograd.core import VSpace
 from autograd.extend import primitive, defvjp
-from autograd.tracer import Box
 from autograd.numpy.numpy_boxes import ArrayBox
 from autograd.numpy.numpy_vspaces import ComplexArrayVSpace, ArrayVSpace
-from autograd.core import VSpace
+from autograd.tracer import Box
+from autoray.lazy import LazyArray
 
 
 @primitive
 def asarray(vals, *args, **kwargs):
     """Gradient supporting autograd asarray"""
-    if isinstance(vals, (onp.ndarray, _np.ndarray)):
-        return _np.asarray(vals, *args, **kwargs)
-    return _np.array(vals, *args, **kwargs)
+    if isinstance(vals, (onp.ndarray, anp.ndarray)):
+        return anp.asarray(vals, *args, **kwargs)
+    return anp.array(vals, *args, **kwargs)
 
 
 def asarray_gradmaker(ans, *args, **kwargs):
@@ -27,29 +38,27 @@ def asarray_gradmaker(ans, *args, **kwargs):
 defvjp(asarray, asarray_gradmaker, argnums=(0,))
 
 
-class Parameter(_np.ndarray):
+class Parameter(anp.ndarray):
     """Constructs a SpinQ parameter for Parameterized Quantum Circuit.
-    The Parameter is inherited by autograd.numpy, added the 'trainable', '_func' factors.
+    The Parameter is inherited by autograd.numpy, added the 'trainable' factors.
     which can be used by auto differentiation and other numpy basic operation
 
     Attributes:
         `trainable` : These attributes is considered in parameterized circuit,
                         to distinguish whether a param should be trained or not.
 
-        '_func': Record the function that operate on the parameter, for auto differentiation.
-                This attributes can be further improved
     """
 
-    def __new__(cls, input_array, *args, trainable=True, _func=None, **kwargs):
+    def __new__(cls,
+                input_array,
+                *args,
+                trainable=True,
+                **kwargs):
         obj = asarray(input_array, *args, **kwargs)
 
         if isinstance(obj, onp.ndarray):
             obj = obj.view(cls)
             obj.trainable = trainable
-            if _func is None:
-                obj._func = []
-            else:
-                obj._func = _func
 
         return obj
 
@@ -59,14 +68,14 @@ class Parameter(_np.ndarray):
             return
 
         self.trainable = getattr(obj, "trainable", None)
-        self._func = getattr(obj, '_func', [])
 
     def __repr__(self):
         string = super().__repr__()
         return string[:-1] + f", trainable={self.trainable})"
 
     def __array_wrap__(self, obj):
-        out_arr = Parameter(obj, trainable=self.trainable, _func=self._func)
+        out_arr = Parameter(obj, trainable=self.trainable,
+                            )
         return super().__array_wrap__(out_arr)
 
     def __array_ufunc__(self, ufunc, method, *inputs, **kwargs):
@@ -103,14 +112,13 @@ class Parameter(_np.ndarray):
 
         # if any of the inputs were trainable, the output is also trainable
         trainable = any(
-            isinstance(x, onp.ndarray) and getattr(x, "trainable", True) for x in inputs
+            (isinstance(x, Parameter) and getattr(x, "trainable", True)) for x in inputs
         )
-        _func = [getattr(x, "_func", []) for x in inputs if isinstance(x, onp.ndarray)]
 
         # Iterate through the ufunc outputs and convert each to Parameter.
         # We also correctly set the trainable attribute.
         for i in range(len(ufunc_output)):  # pylint: disable=consider-using-enumerate
-            ufunc_output[i] = Parameter(ufunc_output[i], trainable=trainable,  _func=_func[i])
+            ufunc_output[i] = Parameter(ufunc_output[i], trainable=trainable)
 
         if len(ufunc_output) == 1:
             # the ufunc has a single output so return a single Parameter
@@ -120,12 +128,9 @@ class Parameter(_np.ndarray):
         return tuple(ufunc_output)
 
     def __getitem__(self, *args, **kwargs):
-        item = super().__getitem__(args, **kwargs)
-        _func = deepcopy(self._func)
+        item = super().__getitem__(*args, **kwargs)
         if not isinstance(item, Parameter):
-            item = Parameter(item, trainable=self.trainable, _func=_func)
-        else:
-            setattr(item, '_func', _func)
+            item = Parameter(item, trainable=self.trainable, )
         return item
 
     def __hash__(self):
@@ -133,7 +138,7 @@ class Parameter(_np.ndarray):
             # Allowing hashing if the Parameter is a scalar.
             # We hash both the scalar value *and* the differentiability information,
             # to match the behaviour of PyTorch.
-            return hash((self.item(), self.trainable))
+            return hash((self.item(), self.trainable,))
 
         raise TypeError("unhashable type: 'Parameter'")
 
@@ -167,12 +172,9 @@ class Parameter(_np.ndarray):
                 print(i)
             Although `x` is a numpy array but not iterable, to avoid this problem
         """
-        try:
-            iterator = super().__iter__()
-            for i in iterator:
-                yield i
-        except TypeError:
+        if self.ndim == 0:
             yield self
+        yield from super().__iter__()
 
     def __len__(self):
         """
@@ -182,33 +184,9 @@ class Parameter(_np.ndarray):
             print(len(x))
             Although `x` is a numpy array but a 0-D array, to avoid this problem
         """
-        try:
-            length = super().__len__()
-        except TypeError:
-            length = 1
-        return length
-
-    @property
-    def func(self):
-        """
-        Return the `function` for the auto differentiation
-        """
-        if len(self._func) == 1:
-            return ParameterExpression(self._func[0])
-
-        def fn(x):
-            for f in self._func:
-                x = f(x)
-            return x
-
-        return ParameterExpression(fn)
-
-    @func.setter
-    def func(self, fun):
-        """
-        Record the function, add the function to the _func.
-        """
-        self._func.append(fun)
+        if self.ndim == 0:
+            return 1
+        return super().__len__()
 
     def unwrap(self):
         """Converts the Parameter to a standard, non-differentiable NumPy ndarray or Python scalar if
@@ -228,23 +206,22 @@ class Parameter(_np.ndarray):
         return self.unwrap()
 
 
-class ParameterExpression:
-    def __init__(self, fn):
-        if isinstance(fn, ParameterExpression):
-            self.fn = fn.fn
-        else:
-            self.fn = fn
+LazyParameter = LazyArray
+LazyParameter.__name__ = 'PlaceHolder'
 
-    def __call__(self, params):
-        _params = self.fn(params)
-        if isinstance(_params, Parameter):
-            _params.func = self.fn
-        return _params
+LazyParameter.__deepcopy__ = lambda self, memodict={}: LazyParameter(
+    fn=self.fn,
+    args=self.args,
+    kwargs=self.kwargs,
+    backend=self._backend,
+    shape=self.shape,
+    deps=self.deps,
+)
 
 
-class NonDifferentiableError(Exception):
-    """Exception raised if attempting to differentiate non-trainable
-    :class:`~.Parameter using Autograd."""
+class PlaceHolder:
+    def __new__(cls, shape, backend='autograd'):
+        return LazyParameter.from_shape(shape, backend=backend)
 
 
 def parameter_to_arraybox(x, *args):
@@ -265,15 +242,8 @@ def parameter_to_arraybox(x, *args):
         if x.trainable:
             return ArrayBox(x, *args)
 
-        raise NonDifferentiableError(
-            f"{x} is non-differentiable. Set the requires_grad attribute to True."
-        )
-
     return ArrayBox(x, *args)
 
 
 Box.type_mappings[Parameter] = parameter_to_arraybox
 VSpace.mappings[Parameter] = lambda x: ComplexArrayVSpace(x) if onp.iscomplexobj(x) else ArrayVSpace(x)
-
-if __name__ == '__main__':
-    pass

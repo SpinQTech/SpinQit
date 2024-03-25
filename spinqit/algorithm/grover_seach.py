@@ -1,4 +1,4 @@
-# Copyright 2022 SpinQ Technology Co., Ltd.
+# Copyright 2023 SpinQ Technology Co., Ltd.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -18,7 +18,8 @@ import random
 import numpy as np
 
 from spinqit import Circuit, H, X, Z
-from spinqit import get_compiler, get_basic_simulator, BasicSimulatorConfig
+from spinqit import get_compiler
+from spinqit.backend import check_backend_and_config
 from spinqit.primitive import MultiControlledGateBuilder
 
 
@@ -30,13 +31,9 @@ class QSearching:
         find: Define searching whether minimum or maximum value
     """
 
-    def __init__(self, find='max', backend=None, config=None, seed=None):
-        self.__find = find
-        self.__backend = backend
-        self.__config = config
-        if backend is None:
-            self.__backend = get_basic_simulator()
-            self.__config = BasicSimulatorConfig()
+    def __init__(self, objective:str ='max', backend_mode:str ='spinq', seed=None, **kwargs):
+        self.__find = objective
+        self.__backend, self.__config = check_backend_and_config(backend_mode, **kwargs)
         self.__seed = seed
         self.__compiler = get_compiler('native')
 
@@ -106,10 +103,6 @@ class QSearching:
             for _ in range(grover_iter):
                 self.__grover_operator(circ, dataset, threshold, oracle_q, q, )
             
-            # executor = ExpvalCost(circ)
-            # executor.update_backend_config(qubits=q)
-            # run and measure
-            # result = executor.execute(circ)
             exe = self.__compiler.compile(circ, 0)
             self.__config.configure_measure_qubits(q)
             result = self.__backend.execute(exe, self.__config)
