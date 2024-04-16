@@ -52,7 +52,7 @@ extern "C" {
 inline string convert_to_binary(size_t i, size_t n)
 {
     std::ostringstream oss;
-    for (size_t j=1; j<=n; j++) {
+    for (size_t j=n; j>=1; j--) {
         oss << ((i>>(j-1)) & 1);
     }
     return oss.str();

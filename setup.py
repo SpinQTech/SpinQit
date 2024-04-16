@@ -105,7 +105,7 @@ if platform.system() == 'Linux':
 
 setup(
     name="spinqit",
-    version="0.2.2",
+    version="0.2.3",
     description="SpinQ Quantum Software Development Kit",
     packages=find_packages(),
     classifiers=[
