@@ -15,7 +15,7 @@ pip install spinqit
 
 To build from the source on Github, you need a C/C++ compiler and CMake in addition. We do not recommend this way unless you are very familiar with the tools.
 
-Please find the documentation in doc/GettingStarted.md. An online version is available at [https://doc.spinq.cn/doc/spinqit/index.htm](https://doc.spinq.cn/doc/spinqit/index.htm).
+Please find the documentation in doc/GettingStarted.md. An online version is available at [https://doc.spinq.cn/doc/spinqit/index.html](https://doc.spinq.cn/doc/spinqit/index.html).
 
 ## Hello Example
 
