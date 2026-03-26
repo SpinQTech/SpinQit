@@ -15,8 +15,7 @@
 from .spinq_session import SpinQSession
 import json
 from typing import Optional
-
-HOST = "http://cloud.spinq.cn:6060"
+from spinqit.model.exceptions import SpinQCloudUserAuthenticationError
 
 USER_URI_PREFIX = "/user/spinqit"
 PLATFORM_URI_PREFIX = "/platform/spinqit"
@@ -25,10 +24,11 @@ RETRY_COUNT = 3
 
 class SpinQCloudClient():
 
-    def __init__(self, username, signature, session: Optional[SpinQSession] = None):
+    def __init__(self, username, signature, host, session: Optional[SpinQSession] = None):
         """SipinQCloudClient constructor"""
         self.username = username
         self.signature = signature
+        self.host = host
         self._session = session if session is not None else SpinQSession()
 
     @property
@@ -50,49 +50,49 @@ class SpinQCloudClient():
 
     def login(self):
         userinfo = {"username": self.username, "signature": self.signature}
-        res = self._session.post(HOST + USER_URI_PREFIX + "/login", data=json.dumps(userinfo))
+        res = self._session.post(self.host + USER_URI_PREFIX + "/login", data=json.dumps(userinfo))
         res_entity = json.loads(res.content)
         if res:
             access_token = res_entity["token"]
             self.session.setHeader("token", access_token)
         else:
             err_msg = "Authentication failed: " + res_entity["msg"] if res_entity.__contains__("msg") and res_entity["msg"] is not None else "Authentication failed"
-            raise Exception(err_msg)
+            raise SpinQCloudUserAuthenticationError(err_msg)
 
     '''
     Platform API
     '''
 
     def retrieve_remote_platforms(self):
-        return self._session.get(HOST + PLATFORM_URI_PREFIX + "/getPlatformList")
+        return self._session.get(self.host + PLATFORM_URI_PREFIX + "/getPlatformListV2")
 
     '''
     Task API
     '''
     def _create_task(self, newTask):
-        return self._session.post(HOST + TASK_URI_PREFIX + "/create", data=json.dumps(newTask))
+        return self._session.post(self.host + TASK_URI_PREFIX + "/create", data=json.dumps(newTask))
 
     def create_task(self, newTask, retry_count:int = RETRY_COUNT):
         return self._retry_request(self._create_task, retry_count, newTask)
 
     def _get_task_by_code(self, task_code: str):
         taskinfo = {"taskCode": task_code}
-        return self._session.get(HOST + TASK_URI_PREFIX + "/retrieveTaskInfoByTcode", params=taskinfo)
+        return self._session.get(self.host + TASK_URI_PREFIX + "/retrieveTaskInfoByTcode", params=taskinfo)
 
     def get_task_by_code(self, task_code: str, retry_count:int = RETRY_COUNT):
         return self._retry_request(self._get_task_by_code, retry_count, task_code)
 
     def _task_status(self, task_code: str):
         taskinfo = {"taskCode": task_code}
-        return self._session.get(HOST + TASK_URI_PREFIX + "/retrieveCurrentTaskStatus", params=taskinfo)
+        return self._session.get(self.host + TASK_URI_PREFIX + "/retrieveCurrentTaskStatus", params=taskinfo)
 
     def task_status(self, task_code: str, retry_count:int = RETRY_COUNT):
         return self._retry_request(self._task_status, retry_count, task_code)
 
-    def _task_result(self, task_code: str):
-        taskinfo = {"taskCode": task_code}
-        return self._session.get(HOST + TASK_URI_PREFIX + "/getTaskRunResultByTcode", params=taskinfo)
+    def _task_result(self, task_code: str, filter_str: str=None):
+        taskinfo = {"taskCode": task_code, 'filterBy': filter_str}
+        return self._session.get(self.host + TASK_URI_PREFIX + "/getTaskRunResultByTcodeV2", params=taskinfo)
 
-    def task_result(self, task_code: str, retry_count:int = RETRY_COUNT):
-        return self._retry_request(self._task_result, retry_count, task_code)
+    def task_result(self, task_code: str, filter_str: str=None, retry_count:int = RETRY_COUNT):
+        return self._retry_request(self._task_result, retry_count, task_code, filter_str)
     

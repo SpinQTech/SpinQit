@@ -13,7 +13,7 @@
 # limitations under the License.
 
 from spinqit.compiler.ir import NodeType, Comparator
-from spinqit import SWAP, CCX, U, CP
+from spinqit import SWAP, CCX, U, CP, CSWAP
 from math import pi
 import random
 from copy import deepcopy
@@ -75,9 +75,8 @@ Map ir to layers functions
 def _put_on_board(circuitboard, node) -> int:
     # use a suffix to debug different gates
     suffix = ''.join(random.sample("abcdefghijklmnopqrstuvwxyz1234567890", 4))
-    largest_slot = 0
     occupy_qubits = node['qubits']
-    if node['name'] in ["CX", "CY", "CZ", "CCX", "CP", "SWAP"] or type == NodeType.caller.value:  
+    if node['name'] in ["CX", "CY", "CZ", "CCX", "CP", "SWAP", "CSWAP"] or node['type'] == NodeType.caller.value:  
         # all control gates, not limited to these native ones
         # need more handle for customized gate
         max_qubit = max(occupy_qubits)
@@ -89,11 +88,11 @@ def _put_on_board(circuitboard, node) -> int:
         extra = [i for i in range(max(occupy_qubits)+1,  len(circuitboard))]
         occupy_qubits = occupy_qubits + extra
     # calc the current largest slot of all bits this gate need
-    largest_slot = max(map(lambda x: len(circuitboard[x]), occupy_qubits))
+    largest_slot_before_append = max(map(lambda x: len(circuitboard[x]), occupy_qubits))
     # append operation to each qubits
     time_slot = 0
     for q in occupy_qubits:
-        while len(circuitboard[q]) < largest_slot:
+        while len(circuitboard[q]) < largest_slot_before_append:
             circuitboard[q].append('*')
         mark = node['name'] + "_" + suffix
         if node['name'] in ["CX", "CY", "CZ", "CP", "SWAP"]: 
@@ -114,12 +113,22 @@ def _put_on_board(circuitboard, node) -> int:
                 mark = mark + "_|"
             else:
                 mark = mark + "_:"
+        elif node['name'] in ["CSWAP"]: 
+            if q == node['qubits'][0]:
+                mark = mark + "_c"
+            elif q == node['qubits'][1] or q == node['qubits'][2]:
+                mark = mark + "_t"
+            elif q <= max(node['qubits']):
+                mark = mark + "_|"
+            else:
+                mark = mark + "_:"
         else:
             if q not in node['qubits']:
                 mark = mark + "_:"
         circuitboard[q].append(mark)
-        time_slot = max(time_slot, len(circuitboard[q]))
-    return largest_slot
+        # len(circuitboard[q]) - 1 represent the index of the layer that the opration has been put into
+        time_slot = max(time_slot, len(circuitboard[q]) - 1)
+    return time_slot
 
 # convert a graph vertex to a circuit view layer node
 # @params: [v] - an igraph vertex in ir
@@ -139,6 +148,8 @@ def _vertex_to_node(v):
             node["name"] = "CCX"
         elif node["name"] == U.label:
             node["name"] = "U"
+        elif node["name"] == CSWAP.label:
+            node["name"] = "CSWAP"
     # add input clbits and conbits in it for measure and cif
     in_clbits = []
     in_conbits = []
@@ -222,7 +233,7 @@ def _extend_customized_gate(ir, caller, sorted_vidx_list):
 # @params: [ir] - circuit ir, used to find operations in customized gate definition
 # @params: [sorted_vidx_list] - graph vertex indexes after topological sorting, used to sort customized gate operations
 # @params: [vnode_list] - a list of circuit layer nodes in called order (sort by topology), prepared to be put into the circuitboard
-# @params: [vnode_list] - a list of circuit layer nodes have been put into circuitboard and have their timeSlot been calculated
+# @params: [graph_node_list] - a list of circuit layer nodes have been put into circuitboard and have their timeSlot been calculated
 # @params: [circuitboard] - a two-dimension array used to simulate the position of gates in a view
 # @params: [view_decompose_level] - desired decompose level of the final view
 # @params: [cur_decompose_level] - current decompose level of nodes in vnode_list

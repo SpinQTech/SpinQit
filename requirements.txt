@@ -2,7 +2,7 @@ antlr4-python3-runtime==4.9.2
 autograd==1.5
 autoray==0.6.1
 matplotlib>=3.5
-numpy
+numpy<2.0.0
 noisyopt==0.2.2
 psutil==5.9.1
 pybind11==2.9.2

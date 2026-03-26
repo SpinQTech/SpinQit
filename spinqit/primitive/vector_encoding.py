@@ -153,11 +153,24 @@ def iqp_encoding(vector: Union[np.ndarray, PlaceHolder], qubits: List, depth: in
 
 
 def basis_encoding(vector:np.ndarray, qubits:List) -> List[Instruction]:
-    inst_list = []
     if any(x != 0 and x != 1 for x in vector):
         raise ValueError
-    for i in range(vector):
+    inst_list = []
+    for i in range(len(vector)):
         if vector[i] == 1:
             inst_list.append(Instruction(X, qubits[i]))
     return inst_list
 
+def zz_encoding(vector:np.ndarray, qubits:List) -> List[Instruction]:
+    if len(vector) != len(qubits):
+        raise ValueError
+    inst_list = []
+    rzz_gate = Z_IsingGateBuilder(2).to_gate()
+    for i in range(len(vector)):
+        inst_list.append(Instruction(Rz, [qubits[i]], [], 2*vector[i]))
+    for i in range(len(vector)):
+        for j in range(i+1, len(vector)):
+            inst_list.append(Instruction(rzz_gate, [qubits[i], qubits[j]], [], 2*vector[i]*vector[j]))
+    for i in range(len(vector)):
+        inst_list.append(Instruction(Rx, [qubits[i]], [], np.pi/2))
+    return inst_list

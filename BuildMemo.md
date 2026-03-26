@@ -13,6 +13,8 @@ If you prefer to install Anaconda, please make sure to download the correct vers
 
 Download and install CMake https://cmake.org/download/
 
+CMake version must > 3.16.0 to compile igraph.
+
 Remember to add CMake to your path.
 
 ```
@@ -64,11 +66,17 @@ Pull this repo
 
 Install required packages for spinqit by `requirement.txt`. This will help avoiding stucks while installing or packing spinqit
 
-If pulling offical images are slow, try to change image sources
-
 ```
 pip install -r requirements.txt
 ```
+
+If pulling offical images are slow, try to change image sources
+
+```
+pip install  -i https://pypi.tuna.tsinghua.edu.cn/simple -r requirements.txt
+```
+
+Also, the full `torch` library can be pretty large, you can use command `pip install torch==2.6.0+cpu --index-url https://download.pytorch.org/whl/cpu` to install the cpu-only version of it
 
 Check if you have all prerequisites. Make sure there is a `igraph` library and a `simulator-core` library that fits your OS
 
@@ -95,7 +103,7 @@ Then install or pack the package
 
 ```
 python setup.py install  # install at local
-python setup.py bdist_wheel  # pack to a binary wheel
+python setup.py bdist_wheel  # pack to a binary wheel, must first pip install wheel
 python setup.py sdist  # pack to a tar.gz of src
 ```
 
@@ -114,10 +122,34 @@ Call Stack (most recent call first):
 
 To fix this, you need to add `PYTHON_INCLUDE_DIR` and `PYTHON_LIBRARY` at line 56 of `setup.py`
 
+Windows Sample
+
+```python
+cmake_args = [
+    '-DPYTHON_INCLUDE_DIR=D:/tools/miniconda3/envs/python38/include',
+    '-DPYTHON_LIBRARY=D:/tools/miniconda3/envs/python38/libs/python38.lib',
+    '-DCMAKE_LIBRARY_OUTPUT_DIRECTORY=' + extdir,
+    '-DPYTHON_EXECUTABLE=' + sys.executable
+]
+```
+
+Mac Sample
+
 ```python
 cmake_args = [
     '-DPYTHON_INCLUDE_DIR=/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.8/include/python3.8',
     '-DPYTHON_LIBRARY=/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.8/lib/libpython3.8.dylib',
+    '-DCMAKE_LIBRARY_OUTPUT_DIRECTORY=' + extdir,
+    '-DPYTHON_EXECUTABLE=' + sys.executable
+]
+```
+
+Linux Sample
+
+```python
+cmake_args = [
+    '-DPYTHON_INCLUDE_DIR=/home/hx/.conda/envs/python38/include/python3.8',
+    '-DPYTHON_LIBRARY=/home/hx/.conda/envs/python38/lib/libpython3.8.so',
     '-DCMAKE_LIBRARY_OUTPUT_DIRECTORY=' + extdir,
     '-DPYTHON_EXECUTABLE=' + sys.executable
 ]

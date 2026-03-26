@@ -34,6 +34,9 @@ class InappropriateBackendError(SpinQError):
 class SpinQCloudServerError(SpinQError):
     pass
 
+class SpinQCloudUserAuthenticationError(SpinQError):
+    pass
+
 class RequestPreconditionFailedError(SpinQError):
     pass
 

@@ -17,13 +17,17 @@ from .gate import *
 import json
 
 class Platform():
-    def __init__(self, code: str, name: str, max_bitnum: int, machine_count: int, gate_list: List[Gate] = [], coupling_map: List[tuple] = None) -> None:
+    def __init__(self, code: str, name: str, max_bitnum: int, machine_count: int = 0, gate_list: List[Gate] = [], coupling_map: List[tuple] = None, simu: bool = False, active_qubits: List[int] = None) -> None:
+        from datetime import datetime
         self._code = code
         self._name = name
         self._max_bitnum = max_bitnum
         self._machine_count = machine_count
         self._support_gates = gate_list
+        self._simu = simu
         self._coupling_map = coupling_map
+        self._active_qubits = active_qubits
+        self._latest_updated_time = datetime.now()
 
     @property
     def code(self) -> str:
@@ -41,6 +45,10 @@ class Platform():
     def machine_count(self) -> int:
         return self._machine_count
 
+    @property
+    def simu(self) -> bool:
+        return self._simu
+
     def available(self) -> bool:
         return self._machine_count > 0
 
@@ -52,22 +60,28 @@ class Platform():
     @property
     def coupling_map(self) -> List:
         return self._coupling_map
+    
+    @property
+    def active_qubits(self) -> List:
+        return self._active_qubits
+    
+    @property
+    def latest_updated_time(self):
+        return self._latest_updated_time
 
     def __str__(self) -> str:
         p_dict = {}
         p_dict["code"] = self._code
         p_dict["name"] = self._name
+        p_dict["simu"] = self._simu
         p_dict["max_bitnum"] = self._max_bitnum
         p_dict["machine_count"] = self._machine_count
         p_dict["support_gates"] = [g.to_dict() for g in self._support_gates]
         p_dict["coupling_map"] = self._coupling_map
         return json.dumps(p_dict)
 
-Gemini = Platform("gemini_vp", "2Qubit小型核磁量子计算机", 2, 0, [H, I, X, Y, Z, X90, Y90, Z90, Rx, Ry, Rz, CNOT, YCON, ZCON, Barrier, U], [(1, 2), (2, 1)])
-Triangulum = Platform("triangulum_vp", "3Qubit核磁量子计算机", 3, 0, [H, I, X, Y, Z, U, Rx, Ry, Rz, T, Td, X90, Y90, Z90, Barrier, CNOT, ZCON, CCX], [(1, 2), (2, 1), (2, 3), (3, 2), (3, 1), (1, 3)])
-Superconductor = Platform("superconductor_vp", "8Qubit超导量子计算机", 8, 0, [H, X, Y, Z, X90, Y90, Z90, Rx, Ry, Rz, ZCON, T, S, Barrier, X90dg, Y90dg, Z90dg, I, U], [(1, 2), (2, 1), (2, 3), (3, 2), (3, 4), (4, 3), (4, 5), (5, 4), (5, 6), (6, 5), (6, 7), (7, 6), (7, 8), (8, 7)])
-
-def find_platform(pcode):
-    for p in [Gemini, Triangulum, Superconductor]:
-        if p.code == pcode: return p
-    return None
+Gemini = Platform("gemini_vp", None, 2)
+Triangulum = Platform("triangulum_vp", None, 3)
+Superconductor = Platform("superconductor_vp", None, 8)
+SQC_25 = Platform("sqc_25_vp", None, 25)
+Simu_25 = Platform("simulator", None, 25)

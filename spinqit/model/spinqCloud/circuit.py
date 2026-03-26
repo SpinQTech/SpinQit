@@ -22,7 +22,6 @@ from typing import Optional
 from ..gates import H, CX, CY, CZ, CCX
 from ..instruction import Instruction
 import math
-from queue import Queue
 
 class CircuitOperation:
     def __init__(self, time_slot: int, gate: Gate, nativeOperation: bool = True, qubits: List = [], arguments: List = []):
@@ -163,19 +162,20 @@ def _vertex_to_circuit_operation(circuitboard, name, qubits, arguments) -> Circu
             else:
                 row.append('|')
         return  CircuitOperation(largest_slot+1, gate, True, qubits, arguments)
-    elif gate.gtag == "U1":
-        # U(theta, phi, lambda) to Rz(phi)Ry(theta)Rz(lambda)
-        circuitboard[qubits[0]].append(gate.gname)
-        # convert to our operation structure
-        theta = round (float(math.degrees(arguments[0])), 1)
-        phi = round (float(math.degrees(arguments[1])), 1)
-        lam = round (float(math.degrees(arguments[2])), 1)
-        qubits = [qubits[0]+1]
-        arguments = [theta, phi, lam]
-        return  CircuitOperation(len(circuitboard[qubits[0]-1]), gate, True, qubits, arguments)
+    # elif gate.gtag == "U1":
+    #     # U(theta, phi, lambda) to Rz(phi)Ry(theta)Rz(lambda)
+    #     circuitboard[qubits[0]].append(gate.gname)
+    #     # convert to our operation structure
+    #     theta = round (float(math.degrees(arguments[0])), 1)
+    #     phi = round (float(math.degrees(arguments[1])), 1)
+    #     lam = round (float(math.degrees(arguments[2])), 1)
+    #     qubits = [qubits[0]+1]
+    #     arguments = [theta, phi, lam]
+    #     return  CircuitOperation(len(circuitboard[qubits[0]-1]), gate, True, qubits, arguments)
     elif gate.gtag == "R1":
         # convert to our operation structure
-        degree = round (float(math.degrees(arguments[0]))%720, 1)
+        degree = float(math.degrees(arguments[0])) if float(math.degrees(arguments[0])) > 0 else float(math.degrees(arguments[0])) + 360
+        degree = round (degree, 2)
         circuitboard[qubits[0]].append(gate.gname + " " + str(degree))
         qubits = [qubits[0]+1]
         arguments = [degree]
@@ -192,10 +192,6 @@ customized_op = {}
 
 def _transfer_qubits(global_qlist, local_qlist):
     return [global_qlist[x] for x in local_qlist]
-
-def _transfer_arguments(global_arguments, local_arguments, func):
-    args = [global_arguments[x] for x in local_arguments]
-    return func(*args)
 
 def _dfs(root_index: int, graph: Graph, visited: Set, result: List):
     successors = graph.neighbors(root_index, mode='out')
@@ -278,8 +274,8 @@ def _is_valid(operation: CircuitOperation, platform: Platform) -> bool:
     return True
 
 def graph_to_circuit(ir: IntermediateRepresentation, 
-                    logical_to_physical: Dict, 
                     platform:Optional[Platform]=None, 
+                    logical_to_physical: Dict=None, 
                     swap_fixes: Optional[List]=None, 
                     gate_updates:Optional[List]=None) -> Circuit:
     global customized_op
@@ -310,7 +306,10 @@ def graph_to_circuit(ir: IntermediateRepresentation,
             if gate_updates is not None and v.index in gate_updates:
                 physical_qubits = gate_updates[v.index]
             else:
-                physical_qubits = [logical_to_physical[q] for q in v['qubits']]      
+                if logical_to_physical is not None:
+                    physical_qubits = [logical_to_physical[q] for q in v['qubits']]
+                else:
+                    physical_qubits = v['qubits']  # use origin qubits
             op = _vertex_to_circuit_operation(circuitboard, v['name'], physical_qubits, arguments)
             if platform is None or _is_valid(op, platform):
                 operations.append(op)
@@ -320,7 +319,10 @@ def graph_to_circuit(ir: IntermediateRepresentation,
             if gatename not in customized_op:
                 customized_op[gatename] = _expand_customized_gate(gatename, ir.dag)
             
-            global_qubits = [logical_to_physical[q] for q in v['qubits']]
+            if logical_to_physical is not None:
+                global_qubits = [logical_to_physical[q] for q in v['qubits']]
+            else:
+                global_qubits = v['qubits']  # use origin qubits
             global_arguments = v['params']
             oplist = _customized_vertex_to_circuit_operation(circuitboard, gatename, v.index, global_qubits, global_arguments, swap_fixes, gate_updates, ir.dag)
 

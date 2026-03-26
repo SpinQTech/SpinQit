@@ -36,8 +36,8 @@ class Circuit(object):
         def build_circuit(x_shape, y_shape):
             circuit = Circuit()
             circuit.allocateQubits(2)
-            x = circuit.add_params(shape=x_shape)
-            y = circuit.add_params(shape=y_shape)
+            x = circuit.add_params(shape=x_shape) #, argnum=(0,))
+            y = circuit.add_params(shape=y_shape) #, argnum=(1,))
             circuit << (U,  [0], [y[0], np.pi, y[2]])
             circuit << (Rx, [0], x[0])
             circuit << (Ry, [1], x[0] ** 2 + y[1])
@@ -137,6 +137,7 @@ class Circuit(object):
         qubits = to_list(other[1])
         param = other[2:]
         self.append(gate, qubits, [], *param)
+        return self
 
     def __or__(self, other: Tuple):
         self.__instructions[-1].set_condition(other[0], other[1], other[2])

@@ -19,7 +19,9 @@
 
 inline double radian_to_angle(double radian)
 {
-    return fmod(radian, 4 * M_PI) / M_PI * 180;
+    double re = fmod(radian, 4 * M_PI);
+    if (re < 0) re += (4 * M_PI);
+    return re / M_PI * 180;
 }
 
 set<int> Nmr::decompose(const igraph_t* g)

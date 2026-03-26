@@ -37,8 +37,8 @@ def get_torch_simulator():
 def get_qasm_backend(func):
     return QasmBackend(func)
 
-def get_spinq_cloud(username, keyfile):
-    return SpinQCloudBackend(username, keyfile)
+def get_spinq_cloud(username, keyfile, host = "http://cloud.spinq.cn:6060"):
+    return SpinQCloudBackend(username, keyfile, host)
 
 def check_backend_and_config(backend_mode, **kwargs):
     if backend_mode == 'spinq':
@@ -79,9 +79,13 @@ def check_backend_and_config(backend_mode, **kwargs):
         shots = kwargs.get('shots', 1024)
         task_name = kwargs.get('task_name', 'NoName')
         task_desc = kwargs.get('task_desc', 'No description.')
+        keep_layout = kwargs.get('keep_layout', None)
+        mqubits = kwargs.get('mqubits', None) # if none, measure all
         config.configure_platform(platform)
         config.configure_shots(shots)
         config.configure_task(task_name, task_desc)
+        config.configure_keep_layout(keep_layout)
+        config.configure_measure_qubits(mqubits)
     else:
         raise InappropriateBackendError(
             f'The backend mode `{backend_mode}` is not supported.')

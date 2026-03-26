@@ -24,3 +24,4 @@ from .multi_controlled_gate_builder import MultiControlledGateBuilder
 from .uniformly_controlled_gate_builder import UniformlyControlledGateBuilder
 from .two_qubit_state_preparation import TwoQubitStatePreparationGateBuilder
 from .tapering import taper_off_qubits, generate_symmetry_generator, generate_sector
+from .swap_test import SwapTest

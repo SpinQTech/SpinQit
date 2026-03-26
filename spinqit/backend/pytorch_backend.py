@@ -116,29 +116,20 @@ def lazy_property(fn):
 
     @property
     def _lazy_property(self):
-        _attr = hasattr(self, attr)
-        _changed = hasattr(self, '__is_change')
-        if _changed or not _attr:
+        if not hasattr(self, attr):
             setattr(self, attr, fn(self))
-            setattr(self, '__is_change', False)
         return getattr(self, attr)
 
     return _lazy_property
 
 
 class TorchResult:
-    def __init__(self, ):
-        self.states = None
-        self.config = None
-        self.__is_change = None
-
-    def __str__(self):
-        return f'Counts :{self.counts}, States :{self.states}, Prob :{self.probabilities}'
-
-    def set_result(self, states, config):
+    def __init__(self, states, config):
         self.states = states
         self.config = config
-        self.__is_change = True
+
+    def __str__(self):
+        return f'Counts :{self.counts}, States :{self.states}, Prob :{self.probabilities}'    
 
     @lazy_property
     def counts(self):
@@ -206,8 +197,8 @@ class TorchSimulator:
     Using pytorch to simulate the quantum circuit
     """
 
-    def __init__(self):
-        self.result = TorchResult()
+    # def __init__(self):
+        # self.result = TorchResult()
 
     def __call__(self, exe, config) -> TorchResult:
         """
@@ -223,7 +214,7 @@ class TorchSimulator:
         state = torch.zeros(2 ** exe.qnum).to(device, dtype)
         state[0] = 1
         final_state = self.get_final_state(exe, state)
-        self.result.set_result(final_state, config)
+        self.result  = TorchResult(final_state, config)
         return self.result
 
     def get_final_state(self, ir, state):

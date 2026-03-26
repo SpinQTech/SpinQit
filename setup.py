@@ -99,13 +99,15 @@ elif platform.system() == 'Darwin':
     elif platform.machine() == 'arm64':
         date_files_list = [(final_place, ['cppsrc/lib/libSpinQInterface_darwin_arm_64.dylib'])]
 
+
 package_data_files = ['compiler/qasm/include/qelib1.inc']
 if platform.system() == 'Linux':
     package_data_files.append('../cppsrc/lib/libSpinQInterface_linux_x86_64.so')
 
+
 setup(
     name="spinqit",
-    version="0.2.3",
+    version="0.2.4",
     description="SpinQ Quantum Software Development Kit",
     packages=find_packages(),
     classifiers=[
@@ -116,7 +118,7 @@ setup(
         "Operating System :: MacOS"
     ],
     ext_modules=[CMakeExtension('spinqit.spinq_backends')],
-    install_requires=['numpy', 'scipy', 'scikit-learn', 'torch', 'autograd==1.5.0', 'psutil', 'retworkx', 'python-igraph==0.9.10', 'pybind11', 'antlr4-python3-runtime==4.9.2', 'python-constraint', 'requests', 'matplotlib>=3.5', 'pycryptodome==3.11.0', 'autoray==0.6.1', 'noisyopt==0.2.2', 'sympy'],
+    install_requires=['numpy<2.0.0', 'scipy', 'scikit-learn', 'torch', 'autograd==1.5.0', 'psutil', 'retworkx', 'python-igraph==0.9.10', 'pybind11', 'antlr4-python3-runtime==4.9.2', 'python-constraint', 'requests', 'matplotlib>=3.5', 'pycryptodome==3.11.0', 'autoray==0.6.1', 'noisyopt==0.2.2', 'sympy'],
     python_requires='>=3.8',
     cmdclass=dict(build_ext=CMakeBuild),
     package_data={'spinqit': package_data_files},

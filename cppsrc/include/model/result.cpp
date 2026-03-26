@@ -74,26 +74,23 @@ map<string, int> Result::get_counts()
 
 string Result::get_random_reading()
 {
-    auto it = probabilities.begin();
-    size_t qubit_num = it->first.length();
-    random_device seed;
-    mt19937_64 engine(seed());
-    uniform_int_distribution<long> distrib(0, (long)(pow(2, qubit_num)) - 1);
-    uniform_real_distribution<double> prob_gen(0.0, 1.0);
-    int run = 0;
-    while (run < repeat) {
-        long binary = distrib(engine);
-        double dist_bound = 0.0;
-        string binstr = to_string(binary, qubit_num);
-        if (probabilities.find(binstr) != probabilities.end()) {
-            dist_bound = probabilities[binstr];
-        }
-        double ran_val = prob_gen(engine);
-        if (ran_val <= dist_bound) {
-            return binstr; 
-        }
-        run += 1;
+    if (probabilities.empty()) {
+        return "";
     }
-   
-    return it->first;
+    
+    static random_device seed;
+    static mt19937_64 engine(seed());
+    static uniform_real_distribution<double> distrib(0.0, 1.0);
+    
+    double total = 1.0;
+    double r = distrib(engine) * total;
+    double cumulative = 0.0;
+    for (const auto& entry : probabilities) {
+        cumulative += entry.second;
+        if (r < cumulative) {
+            return entry.first;
+        }
+    }
+
+    return probabilities.rbegin()->first;
 }

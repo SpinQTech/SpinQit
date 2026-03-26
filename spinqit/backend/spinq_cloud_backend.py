@@ -11,13 +11,14 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from typing import List, Optional
+from typing import Dict, List, Optional, Union
 import base64
 import functools
 import time
 import numpy as onp
 from math import pi
-from datetime import datetime
+from datetime import datetime, timedelta
+import json
 from copy import deepcopy
 from autoray import numpy as ar
 from scipy import sparse
@@ -36,7 +37,7 @@ from spinqit.model import Instruction
 from spinqit.compiler.ir import NodeType, IntermediateRepresentation
 from spinqit.grad import grad_func_hardware
 from .backend_util import get_graph_capsule, _add_pauli_gate
-from .layout import generate_direct_layout, generate_routing_layout, collect_gate_qubits, generate_lookahead_routing
+from .layout import generate_direct_layout, collect_gate_qubits
 from ..primitive import PauliBuilder, calculate_pauli_expectation, pauli_decompose
 from ..utils.function import requires_grad
 
@@ -57,16 +58,49 @@ class SpinQCloudConfig:
     def configure_process_now(self, process_now: bool):
         self.metadata['process_now'] = process_now
 
+    def configure_measured_qubits(self, mqubits: Union[List, range]):
+        if isinstance(mqubits, range):
+            self.metadata['mqubits'] = list(mqubits)
+        else:
+            self.metadata['mqubits'] = mqubits
+
+    def configure_keep_layout(self, phylayout: Union[List, range]):
+        if isinstance(phylayout, range):
+            self.metadata['keep_layout'] = list(phylayout)
+        else:
+            self.metadata['keep_layout'] = phylayout
+
 class SpinQCloudResult:
-    def __init__(self, task_name: str, platform: str):
+    def __init__(self,  task_code: str, task_name: str, platform: str):
+        self.task_code = task_code
         self.task_name = task_name
         self.platform = platform
-        self.probabilities = None
+        self._prob = None
+        self._counts = None
+        self._shots = None
+
+    @property
+    def counts(self):
+        if self._counts is not None:
+            return self._counts
+        elif self._prob is not None and self._shots is not None:
+            return {k: round(v * self._shots) for k, v in self._prob.items()}
+        else:
+            return None
+
+    @property
+    def probabilities(self):
+        if self._prob is not None:
+            return self._prob
+        elif self._counts is not None and self._shots is not None:
+            return {k: round(v / self._shots, 6) for k, v in self._counts.items()}
+        else:
+            return None
 
 class SpinQCloudBackend:
     MAX_RETRIES = 3
 
-    def __init__(self, username: str, keyfile: str):
+    def __init__(self, username: str, keyfile: str, host:str):
         message = username.encode(encoding="utf-8")
         with open(keyfile) as f:
             key = f.read()
@@ -79,7 +113,7 @@ class SpinQCloudBackend:
         sign = signer.sign(digest)
         signature = base64.b64encode(sign)
         signature = str(signature, encoding = "utf-8")
-        self._api_client = SpinQCloudClient(username, signature)
+        self._api_client = SpinQCloudClient(username, signature, host)
         self._platforms = []
         # self.__qubit_mapping = None
         self._login()
@@ -144,38 +178,38 @@ class SpinQCloudBackend:
                     ir.substitute_nodes([v.index], subgates, v['type'])
                     ir.remove_nodes([v.index], False)
                     i-= 1
-                elif v['name'] == U.label:
-                    qubits, clbits = self.__qubits_and_clbits(v)
-                    subgates = []
-                    if v['type'] == NodeType.op.value:
-                        subgates.append(Instruction(Rz, qubits, clbits, v['params'][2]))
-                        subgates.append(Instruction(Ry, qubits, clbits, v['params'][0]))
-                        subgates.append(Instruction(Rz, qubits, clbits, v['params'][1]))
-                        ir.substitute_nodes([v.index], subgates, v['type'])
-                        ir.remove_nodes([v.index], False)
-                    else:
-                        pindex_group = []
-                        var_full = v['pindex']
-                        start = 0
-                        for func in v['params']:
-                            arg_count = func.__code__.co_argcount
-                            var_slice = var_full[start:start+1] if arg_count==0 else var_full[start:start+arg_count]
-                            pindex_group.append(var_slice)
-                            start += arg_count
-                        subgates.append(Instruction(Rz, qubits, clbits, v['params'][2]))
-                        subgates.append(Instruction(Ry, qubits, clbits, v['params'][0]))
-                        subgates.append(Instruction(Rz, qubits, clbits, v['params'][1]))
-                        new_nodes = ir.substitute_nodes([v.index], subgates, v['type'])
-                        nv1 = ir.dag.vs[new_nodes[0]]
-                        nv1['pindex'] = pindex_group[2]
-                        nv2 = ir.dag.vs[new_nodes[1]]
-                        nv2['pindex'] = pindex_group[0]
-                        nv3 = ir.dag.vs[new_nodes[2]]
-                        nv3['pindex'] = pindex_group[1]
-                        ir.remove_nodes([v.index], False)
-                        i -= 1
+                # elif v['name'] == U.label:
+                #     qubits, clbits = self.__qubits_and_clbits(v)
+                #     subgates = []
+                #     if v['type'] == NodeType.op.value:
+                #         subgates.append(Instruction(Rz, qubits, clbits, v['params'][2]))
+                #         subgates.append(Instruction(Ry, qubits, clbits, v['params'][0]))
+                #         subgates.append(Instruction(Rz, qubits, clbits, v['params'][1]))
+                #         ir.substitute_nodes([v.index], subgates, v['type'])
+                #         ir.remove_nodes([v.index], False)
+                #     else:
+                #         pindex_group = []
+                #         var_full = v['pindex']
+                #         start = 0
+                #         for func in v['params']:
+                #             arg_count = func.__code__.co_argcount
+                #             var_slice = var_full[start:start+1] if arg_count==0 else var_full[start:start+arg_count]
+                #             pindex_group.append(var_slice)
+                #             start += arg_count
+                #         subgates.append(Instruction(Rz, qubits, clbits, v['params'][2]))
+                #         subgates.append(Instruction(Ry, qubits, clbits, v['params'][0]))
+                #         subgates.append(Instruction(Rz, qubits, clbits, v['params'][1]))
+                #         new_nodes = ir.substitute_nodes([v.index], subgates, v['type'])
+                #         nv1 = ir.dag.vs[new_nodes[0]]
+                #         nv1['pindex'] = pindex_group[2]
+                #         nv2 = ir.dag.vs[new_nodes[1]]
+                #         nv2['pindex'] = pindex_group[0]
+                #         nv3 = ir.dag.vs[new_nodes[2]]
+                #         nv3['pindex'] = pindex_group[1]
+                #         ir.remove_nodes([v.index], False)
+                #         i -= 1
                 elif v['name'] == CP.label:
-                    if platform_code == Gemini.code:
+                    if platform_code in [Gemini.code, SQC_25.code]:
                         qubits, clbits = self.__qubits_and_clbits(v)
                         subgates = []
                         for f in CP.factors:
@@ -189,14 +223,14 @@ class SpinQCloudBackend:
                     else:
                         raise CircuitOperationValidationError("Current platform does not support " + v['name'] + " gate.")
                 elif v['name'] == P.label:
-                    if platform_code in [Gemini.code, Triangulum.code, Superconductor.code]:
+                    if platform_code in [Gemini.code, Triangulum.code, Superconductor.code, SQC_25.code]:
                         v['name'] = Rz.label
                     else:
                         raise CircuitOperationValidationError("Current platform does not support " + v['name'] + " gate.")
-                elif v['name'] == T.label and platform_code == Gemini.code:
+                elif v['name'] == T.label and platform_code in [Gemini.code, SQC_25.code]:
                     v['name'] = Rz.label
                     v['params'] = [pi/4]  
-                elif v['name'] == Td.label and platform_code in [Gemini.code, Superconductor.code]:
+                elif v['name'] == Td.label and platform_code in [Gemini.code, Superconductor.code, SQC_25.code]:
                     v['name'] = Rz.label
                     v['params'] = [-pi/4]  
                 elif v['name'] == S.label:
@@ -206,7 +240,7 @@ class SpinQCloudBackend:
                     v['name'] = Rz.label
                     v['params'] = [-pi/2]
                 elif v['name'] == CCX.label:
-                    if platform_code == Superconductor.code:
+                    if platform_code in [Superconductor.code, SQC_25.code]:
                         qubits, clbits = self.__qubits_and_clbits(v)
                         subgates = []
                         # no rotation params, no need to worry about the 3rd variable of factors
@@ -229,81 +263,101 @@ class SpinQCloudBackend:
             for p in res_entity["items"]:
                 gate_list = []
                 for gname in p["supportGateName"]:
-                    gate_list.append(find_gate(gname))
-                if p["couplingMap"] is not None:
-                    coupling_map = []
-                    for edge in p["couplingMap"]:
-                        coupling_map.append((edge[0]-1, edge[1]-1))
-                else:
-                    coupling_map = None
-                self._platforms.append(Platform(p["pcode"], p["pname"], p["maxBitNum"], p["countOnlineMachine"], gate_list, coupling_map))
+                    g = find_gate(gname)
+                    if g is not None:
+                        gate_list.append(g)
+                coupling_map = []
+                active_qubits = []
+                if "couplingMap" in p and p["couplingMap"] is not None:
+                    for k, vlist in p["couplingMap"].items():
+                        active_qubits.append(int(k)-1)
+                        for v in vlist:
+                            coupling_map.append((int(k)-1, int(v)-1))
+                simu = p["simu"] if "simu" in p else False    
+                self._platforms.append(Platform(p["pcode"], p["pname"], p["maxBitNum"], p["countOnlineMachine"], gate_list, coupling_map, simu, active_qubits))
         else:
             raise SpinQCloudServerError("Error occurs when retrieving platforms on cloud.")
-
-    def get_local_platforms(self):
-        return [Gemini, Triangulum, Superconductor]
 
     @property
     def platforms(self):
         return self._platforms
 
+    def get_platform_list(self) -> Platform:
+        if len(self._platforms) == 0:
+            raise NotFoundError("No platform is available.")
+        else:
+            return [p.code for p in self._platforms]
+        
     def get_platform(self, code: str) -> Platform:
         if len(self._platforms) == 0:
             raise NotFoundError("No platform is available.")
         for p in self._platforms:
             if p.code == code: return p
-        raise NotFoundError("No plaform matches code = " + code)
+        raise NotFoundError(f'Platform "{code}" not found or access denied. Check if the platform exists and you have the permission.')
 
-    def transpile(self, platform_code: str, ir: IntermediateRepresentation):
-        self.assemble(platform_code, ir)
-
-        p = self.get_platform(platform_code)
-        gate_couplings = collect_gate_qubits(ir)
-
-        couplings = [coupling for _, coupling in gate_couplings if len(coupling) > 1]
-
-        # see if tepological problem can be solved by switch qubits
-        qubit_mapping, message = generate_direct_layout(ir.dag['qnum'], couplings, p.max_bitnum, p.coupling_map)
-
-        # if failed, add swap
-        swap_fixes, gate_updates = None, None
-        if qubit_mapping is None:
-            # optimize by switching qubits before swapping
-            qubit_mapping = generate_routing_layout(ir.dag['qnum'], couplings, p.max_bitnum, p.coupling_map)
-            init_mapping = qubit_mapping.copy()
-            # add swap
-            swap_fixes, gate_updates = generate_lookahead_routing(gate_couplings, p.coupling_map, qubit_mapping)
-        else:
-            init_mapping = qubit_mapping.copy()
-
-        circuit = graph_to_circuit(ir, init_mapping.log_to_phy, p, swap_fixes, gate_updates)
-        return circuit, qubit_mapping
-
-    def submit_task(self, platform_code: str, ir: IntermediateRepresentation, name: str = "Untitled Task", calc_matrix: bool = False, shots: Optional[int] = None, process_now: bool = True, description: str = None):
+    def submit_task(self, ir: IntermediateRepresentation, config: SpinQCloudConfig, calc_matrix: bool = False, process_now: bool = True, debug: bool = False):
+        # get params from config
+        platform_code = config.metadata['platform']
+        log_to_phy = None
+        if 'keep_layout' in config.metadata and config.metadata['keep_layout'] is not None:
+            log_to_phy = {i: pq for i, pq in enumerate(config.metadata['keep_layout'])}
+        measured_qubits = config.metadata['mqubits'] if 'mqubits' in config.metadata and len(config.metadata['mqubits']) > 0 else None
+        shots = config.metadata['shots'] if 'shots' in config.metadata else 1024
+        name = config.metadata['task_name'] if 'task_name' in config.metadata else 'Untitled Task'
+        description = config.metadata['task_desc'] if 'task_desc' in config.metadata else None
         platform = self.get_platform(platform_code)
-        if platform.machine_count > 0:
-            circuit, qubit_mapping = self.transpile(platform_code, ir)
+        
+        # validate
+        if log_to_phy is not None:
+            if len(log_to_phy) != ir.dag['qnum']: 
+                raise RequestPreconditionFailedError(f"Mapping phyiscal qubit number must match circuit qubit number {ir.dag['qnum']}.")
+            for k, v in log_to_phy.items():
+                if k >= ir.dag['qnum']: 
+                    raise RequestPreconditionFailedError(f"Mapping to invalid logical qubit idx {k}. Circuit only supplies 0~{ir.dag['qnum']-1}.")
+                if v > platform.max_bitnum: 
+                        raise RequestPreconditionFailedError(f"Mapping to invalid physical qubit idx {v}. Platform only supplies 0~{platform.max_bitnum-1}.")
+            if platform_code != SQC_25.code:
+                if platform_code == Simu_25.code:
+                    print(f'[Warn] Simulator platform {platform_code} does not support physical qubit mapping.')
+                else:
+                    print(f'[Warn] Platform {platform_code} does not support customized physical qubit mapping.')
+        if measured_qubits is not None:  
+            for mq in measured_qubits:
+                if mq >= ir.dag['qnum']:
+                    raise RequestPreconditionFailedError(f"Measured qubit idx {mq} exceeds circuit qubit number {ir.dag['qnum']}.")      
+            if platform_code not in [SQC_25.code, Simu_25.code]:
+                print(f'[Warn] Platform {platform_code} does not support measuring part of the qubits. Full result will be returned.')
+        
+        if not debug and not platform.simu and platform.machine_count <= 0:
+            raise RequestPreconditionFailedError("No machine is running for this platform. Please try later.")
+        else:
+            # make up cloud circuit
+            self.assemble(platform_code, ir)
+            circuit = graph_to_circuit(ir, platform)
+            # format request
             if circuit is None or len(circuit.operations) <= 0:
                 raise RequestPreconditionFailedError("Cannot submit a task with empty circuit.")
-            if platform_code == Superconductor.code and shots is None:
-                shots = 1000
-            newTask = Task(name, platform_code, circuit, qubit_mapping.phy_to_log, calc_matrix, shots, process_now, description, self._api_client)
-            res = self._api_client.create_task(newTask.to_request())
-            res_entity = json.loads(res.content)
-            if res:
-                newTask.set_task_code(res_entity["task"]["tcode"])
-                newTask.set_status(res_entity["task"]["tstatus"])
-                if res_entity["task"]["createdTime"] is not None:
-                    created_time = datetime.strptime(res_entity["task"]["createdTime"], '%Y-%m-%dT%H:%M:%S.%f%z')
-                    newTask.set_created_time(created_time)
-                else:
-                    newTask.set_created_time(None)
-                return newTask
+            if measured_qubits is not None:
+                measured_qubits = [mq+1 for mq in measured_qubits]    
+            if log_to_phy is not None:
+                log_to_phy = {k+1: v+1 for k, v in log_to_phy.items()}
+            newTask = Task(name, platform_code, ir.dag['qnum'], ir.dag['cnum'], circuit, log_to_phy, calc_matrix, shots, process_now, description, False, None, "spinqit", measured_qubits, self._api_client)
+            if debug:
+                print(json.dumps(newTask.to_request()))
             else:
-                raise SpinQCloudServerError("Submit failed: " + res_entity["msg"] if res_entity.__contains__("msg") and res_entity["msg"] is not None else "Submit failed")
-        else:
-            raise RequestPreconditionFailedError("No machine is running for this platform. Please try later.")
-
+                res = self._api_client.create_task(newTask.to_request())
+                res_entity = json.loads(res.content)
+                if res:
+                    task_code = res_entity["task"]["tcode"] if "task" in res_entity and "tcode" in res_entity["task"] else None
+                    return res_entity['status'], res_entity['msg'], task_code
+                elif res.status_code == 412 or res.status_code == 406 or res.status_code == 424:
+                    return res_entity['status'], res_entity['msg'], None
+                elif res.status_code == 401 or res.status_code == 403:
+                    err_msg = "Authentication failed: " + res_entity["msg"] if res_entity.__contains__("msg") and res_entity["msg"] is not None else "Authentication failed"
+                    raise SpinQCloudUserAuthenticationError(err_msg)
+                else:
+                    raise SpinQCloudServerError("Submit failed: " + res_entity["msg"] if res_entity.__contains__("msg") and res_entity["msg"] is not None else "Submit failed")
+            
     def get_task(self, task_code: str):
         res = self._api_client.get_task_by_code(task_code)
         if res:
@@ -319,28 +373,101 @@ class SpinQCloudBackend:
                 task.set_created_time(None)
             task.set_api_client(self._api_client)
             return task
+        elif res.status_code == 401 or res.status_code == 403:
+            res_entity = json.loads(res.content)
+            err_msg = "Authentication failed: " + res_entity["msg"] if res_entity.__contains__("msg") and res_entity["msg"] is not None else "Authentication failed"
+            raise SpinQCloudUserAuthenticationError(err_msg)
         else:
-            raise SpinQCloudServerError("Retrieve task failed.")
-
-    def execute(self, ir, config):
+            raise SpinQCloudServerError(f'Get task failed: status code = {res_entity["status"]}. Message = {res_entity["msg"]}')
+            
+    def execute(self, ir, config: SpinQCloudConfig):
         '''
         We do not process density matrix for now. This execute method is synchronous and there must be a result.
         '''
-        task_name = 'Untitled Task' if 'task_name' not in config.metadata else config.metadata['task_name']
         for i in range(SpinQCloudBackend.MAX_RETRIES):
             try:
-                task = self.submit_task(config.metadata['platform'], ir, name=task_name, 
-                                        shots=config.metadata['shots'], description = config.metadata['task_desc'])
-                result = SpinQCloudResult(task_name, config.metadata['platform'])
-                result.probabilities = task.get_result()
+                status, msg, task_code = self.submit_task(ir, config)
                 break
+            except NotFoundError as e:
+                raise e   
+            except RequestPreconditionFailedError as e:
+                raise e    
+            except InappropriateBackendError as e:
+                raise e
+            except CircuitOperationValidationError as e:
+                raise e
+            except SpinQCloudUserAuthenticationError as e:
+                raise e
             except Exception as e:
                 if i < SpinQCloudBackend.MAX_RETRIES - 1:
                     time.sleep(3)
                 else:
-                    print('Max retries exceeded. Execution failed.')
-                    raise 
-        return result
+                    raise SpinQCloudServerError('Max retries exceeded. Execution failed.')        
+        if status == 200 or status == 202:
+            print(f'Task {task_code} has been submitted successfully. Please wait for processing.')
+            result = self.get_task_result(task_code)
+            return result
+        elif status == 226:
+            print(f'Task {task_code} has been submitted and saved successfully, but no machine online now. Please try again to execute it later.')
+        elif status == 206:
+            print(f'Task {task_code} has been submitted and saved successfully, but no available machine fits its topology. Please try again to execute it later.')
+        else:
+            raise SpinQCloudServerError(f'Task submission failed: status code = {status}. Message = {msg}')
+
+    def get_task_result(self, task_code: str, filter_str:str = None, hanging:bool = True, timeout:Optional[int] = None):
+        start_time = datetime.now()
+        if timeout is not None:
+            end_time = start_time + timedelta(seconds=timeout)
+        count = 0
+        while (timeout is None or datetime.now() < end_time):
+            count = count + 1
+            try:
+                res_entity = self._get_task_result(task_code, filter_str)
+                result = SpinQCloudResult(task_code, None, None)
+                if res_entity["taskStatus"] == 'F':
+                    errMsg = res_entity["taskErrMsg"] if "taskErrMsg" in res_entity else None
+                    print(f'Task {task_code} failed, error message: {errMsg}.')
+                    return
+                else:
+                    if "module" in res_entity["run"] and res_entity["run"]["module"] is not None:
+                        result._prob = res_entity["run"]["module"]
+                    if "count" in res_entity["run"] and res_entity["run"]["count"] is not None:
+                        result._counts = res_entity["run"]["count"]
+                    if "shots" in res_entity and res_entity["shots"] is not None:
+                        result._shots = res_entity["shots"]
+                    else:
+                        result._shots = 1024
+                    return result
+            except SpinQCloudUserAuthenticationError as eo:
+                raise eo
+            except TaskStatusError as eo:
+                if hanging:
+                    time.sleep(5)
+                    continue
+                else:
+                    raise eo
+            except Exception as eo :
+                raise Exception(str(eo))
+        raise RequestTimeoutError("Find result timeout.")
+
+    def _get_task_result(self, task_code: str, filter_str:str = None):
+        res = self._api_client.task_result(task_code, filter_str)
+        res_entity = json.loads(res.content)
+        if res.status_code == 200 or res.status_code == 202:
+            # is already a map
+            return res_entity
+        elif res.status_code == 206:
+            raise SpinQCloudServerError(res_entity["msg"])
+        elif res.status_code == 412:
+            raise TaskStatusError(res_entity["msg"])
+        elif res.status_code == 401 or res.status_code == 403:
+            err_msg = "Authentication failed: " + res_entity["msg"] if res_entity.__contains__("msg") and res_entity["msg"] is not None else "Authentication failed"
+            raise SpinQCloudUserAuthenticationError(err_msg)
+        else:
+            if res_entity is not None and res_entity["msg"] is not None:
+                raise SpinQCloudServerError(res_entity["msg"])
+            else:
+                raise SpinQCloudServerError("Retrieve task status failed")
 
     def get_value_and_grad_fn(self, ir, config, measure_op=None, place_holder=None, grad_method=None):
         def value_and_grad_fn(params):
