@@ -301,29 +301,31 @@ else:
 
 SpinQit can convert its intermediate representation to OpenQASM codes in the form of string so that any third-party platform which suports OpenQASM can be used to execute codes written in SpinQit. The QASM backend is initialized using a handle function which can run OpenQASM codes. The result format of this backend depends on the actual execution platform. It would be better to convert the third-party results to the result formats of SpinQit in the handle. SpinQit provides a QiskitQasmResult class to process Qiskit results. 
 
-The following example shows how to define a handle for the QASM backend to use Qiskit 0.31.0 to execute a quantum circuit.
+The following example shows how to define a handle for the QASM backend to use Qiskit 0.40.0 to execute a quantum circuit. (You may need to run `pip install qiskit==0.40` to add the qiskit dependency first, for the following example)
 
 ```python
 from qiskit import QuantumCircuit
 from qiskit import execute
 from qiskit import Aer
-from spinqit import get_qasm_backend, QasmConfig, QiskitQasmResult
+from spinqit import get_qasm_backend, QasmConfig, QiskitQasmResult, get_compiler
 
 def qiskit_fn(qasm, shots=1024, *args, **kwargs):
     qc = QuantumCircuit.from_qasm_str(qasm)
     simulator = Aer.get_backend('statevector_simulator')
     result = execute(qc, simulator, *args, **kwargs).result()
-    print(result.get_statevector())
     qiskit_result = QiskitQasmResult()
     qiskit_result.set_result(result.get_statevector(), shots)
     return qiskit_result
 
-...
+circuit = "circuit.qasm" # replace with the path to your qasm file
 
+compiler = get_compiler('qasm')
 exe = compiler.compile(circuit, 0)
-config = QasmConfig()
+config = QasmConfig(1024)
 engine = get_qasm_backend(qiskit_fn)
-states = engine.execute(exe, config).states
+job = engine.execute(exe, config)
+
+print(job.counts)
 ```
 
 
