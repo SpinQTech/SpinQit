@@ -65,7 +65,7 @@ class ConstantsStateOptimization(object):
     def run(self, ir: IntermediateRepresentation):
         self.wire_state = BasisState(ir.dag['qnum'])
 
-        to_delete = []
+        changes = []
         vs = ir.dag.topological_sorting()
         for v in vs:
             if ir.dag.vs[v]['type'] == NodeType.caller.value:
@@ -78,7 +78,7 @@ class ConstantsStateOptimization(object):
                 
                 if gname in self.controlled_gates:
                     if gname == CX.label and self.wire_state[qargs[-1]] == '+':
-                        to_delete.append((v, True)) 
+                        changes.append((v, None))
                         continue
                     
                     ctrl_qubits = qargs[:-1]
@@ -90,12 +90,12 @@ class ConstantsStateOptimization(object):
                             new_state += state
                             new_ctrl_qubits.append(qubit)
                         elif self.wire_state[qubit] != state:
-                            to_delete.append((v, True))
+                            changes.append((v, None))
                             break
                     else:
-                        if self.wire_state[qargs[-1]] == '-':
+                        if gname in {CX.label, CCX.label} and self.wire_state[qargs[-1]] == '-':
                             if not new_ctrl_qubits and self.wire_state[qargs[0]] in ['0', '1']:
-                                to_delete.append((v, True))
+                                changes.append((v, None))
                                 continue
                             else:
                                 new_dag = self.z_dag(new_state, new_ctrl_qubits)
@@ -108,31 +108,26 @@ class ConstantsStateOptimization(object):
                         new_ops = [i.get_op() for i in new_dag]
                         wires = [i.qubits for i in new_dag]
                         self.constant_analysis(new_ops, wires)
-                        ir.substitute_nodes([v], new_dag, ir.dag.vs[v]['type'])
-                        to_delete.append((v, False))
+                        changes.append((v, new_dag))
                 elif gname == SWAP.label:
                     if self.wire_state[qargs[0]] == self.wire_state[qargs[1]] is None:
                         continue
                     if self.wire_state[qargs[0]] == self.wire_state[qargs[1]]:
-                        to_delete.append((v, True))
+                        changes.append((v, None))
                         continue
                     new_dag = self.swap_dag(qargs)
 
-                    ir.substitute_nodes([v], new_dag, ir.dag.vs[v]['type'])
-                    to_delete.append((v, False))
+                    changes.append((v, new_dag))
                     self.wire_state.swap(qargs[0], qargs[1])
                 else:
                     self.constant_analysis([gname], [qargs])
         
-        keep_list = []
-        non_keep_list = []
-        for element in to_delete:
-            if element[1] == True:
-                keep_list.append(element[0])
+        for v, replacement in sorted(changes, key=lambda change: change[0], reverse=True):
+            if replacement is None:
+                ir.remove_nodes([v], True)
             else:
-                non_keep_list.append(element[0])
-        ir.remove_nodes(keep_list, True)
-        ir.remove_nodes(non_keep_list, False)
+                ir.substitute_nodes([v], replacement, ir.dag.vs[v]['type'])
+                ir.remove_nodes([v], False)
                 
     def constant_analysis(self, nodes: List, wires: List):
         '''Update wire states'''
