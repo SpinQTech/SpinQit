@@ -15,7 +15,6 @@
 from ..ir import IntermediateRepresentation
 from .cancel_redundant_gates import CancelRedundantGates
 from .collapse_single_qubit_gates import CollapseSingleQubitGates
-from .collapse_two_qubit_gates import CollapseTwoQubitGates
 
 class PassManager(object):
     def __init__(self, level: int):
@@ -26,11 +25,9 @@ class PassManager(object):
         elif level == 2:
             self.passes.append(CancelRedundantGates())
             self.passes.append(CollapseSingleQubitGates())
-            self.passes.append(CollapseTwoQubitGates())
         elif level == 3:
             self.passes.append(CancelRedundantGates())
             self.passes.append(CollapseSingleQubitGates())
-            self.passes.append(CollapseTwoQubitGates())
     
     def append(self, optimizer):
         self.passes.append(optimizer)
