@@ -43,9 +43,10 @@ class SPSAOptimizer(Optimizer):
                 print('Optimize: step {}, loss: {},'.format(len(loss_list) + 1, loss))
             loss_list.append(loss)
 
-        minimizeSPSA(qlayer, *params,
-                     niter=self.niter,
-                     paired=False,
-                     callback=callback_fn,
-                     c=self.c, a=self.a, **self.kwargs)
+        result = minimizeSPSA(qlayer, *params,
+                              niter=self.niter,
+                              paired=False,
+                              callback=callback_fn,
+                              c=self.c, a=self.a, **self.kwargs)
+        params[0][...] = result.x
         return loss_list
