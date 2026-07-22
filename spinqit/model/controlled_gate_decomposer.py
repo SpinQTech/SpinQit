@@ -48,7 +48,7 @@ def control_basis_decomposition(gate: Gate, qubits: List) -> List:
     elif gate == Rz:
         return CRz_decomposition(qubits)
     elif gate == CX or gate.label == 'CX':
-        return CCX
+        return [(CCX, qubits)]
     elif gate == CZ:
         return CCZ_decomposition(qubits)
    
