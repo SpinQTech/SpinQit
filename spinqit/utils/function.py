@@ -66,7 +66,7 @@ def schmidt_decompose(psi,
 
 def get_ground_state_info(H):
     # 计算 H 的特征值与特征向量
-    vals, vecs = sparse.linalg.eigsh(H, k=1, which='SM')  # 'buckling' | 'cayley'
+    vals, vecs = sparse.linalg.eigsh(H, k=1, which='SA')
     # 获取基态
     ground_state = (vecs[:, 0])
     print(ground_state)
