@@ -143,12 +143,24 @@ class NativeCompiler(Compiler):
 
         for inst in circ.instructions:
             gate = inst.gate
-            if (isinstance(gate, ControlledGate)
-                    and isinstance(gate.base_gate, MatrixGate)
-                    and len(gate.factors) == 0):
+            lower_controlled = (
+                isinstance(gate, ControlledGate)
+                and not any(
+                    isinstance(param, LazyParameter)
+                    for param in _flatten(inst.params)
+                )
+                and (
+                    (isinstance(gate.base_gate, MatrixGate)
+                     and len(gate.factors) == 0)
+                    or (gate.control_bits > 1
+                        and gate.base_gate.qubit_num == 1)
+                )
+            )
+            if lower_controlled:
                 # A raw controlled matrix becomes an IR ``unitary`` node, which
-                # execution and serialization backends do not implement.  Lower
-                # it to the native basis before constructing the IR instead.
+                # execution and serialization backends do not implement. Nested
+                # control also makes a subgate's global phase observable. Lower
+                # both forms from the exact base matrix before constructing IR.
                 from spinqit.primitive.multi_controlled_gate_builder import MultiControlledGateBuilder
                 lowered_gate = MultiControlledGateBuilder(
                     gate.control_bits, gate.base_gate, inst.params
