@@ -13,7 +13,7 @@
 # limitations under the License.
 from typing import List
 from .basic_gate import Gate
-from .matrix_gate import MatrixGate
+from .matrix_gate import MatrixGate, MatrixGateBuilder
 from .controlled_gate import ControlledGate
 from .gates import I, H, X, Y, Z, Rx, Ry, Rz, P, T, Td, S, Sd, CX, CY, CZ, SWAP, MEASURE, BARRIER
 from .instruction import Instruction
@@ -52,6 +52,10 @@ class InverseBuilder(object):
             return Sd
         elif g == Sd:
             return S
+        elif isinstance(g, MatrixGate):
+            inverse = MatrixGateBuilder(lambda params: g.get_matrix(*params).conj().T).to_gate()
+            inverse.label = g.label + '_inv'
+            return inverse
         elif len(g.factors) > 0:
             inv_gate = InverseGate(g)
             for f in g.factors:
