@@ -54,8 +54,6 @@ class NativeCompiler(Compiler):
         gate = inst.gate
         if gate in IR.basis_set or gate.label in IR.label_set:
             vindex = ir.add_op_node(inst.get_op(), inst.params, inst.qubits, inst.clbits)
-            if condition != None:
-                ir.add_node_condition(vindex, condition[0], condition[1], condition[2])
         elif isinstance(gate, MatrixGate):
             unitary = gate.get_matrix(*inst.params)
             if len(gate.factors) == 0:      
@@ -114,11 +112,14 @@ class NativeCompiler(Compiler):
                 ctrl_bits += 2
             
             if len(gate.factors) == 0:  
-                ir.add_unitary_node(gate.label, unitary, inst.qubits, ctrl_bits, inverse_flag)
+                vindex = ir.add_unitary_node(gate.label, unitary, inst.qubits, ctrl_bits, inverse_flag)
             else:
                 self.add_definition_cluster(ir, gate, len(inst.params), len(inst.qubits), len(inst.clbits))
                 vindex = ir.add_caller_node(gate.label, inst.params, inst.qubits)
                 ir.add_caller_matrix(vindex, unitary, ctrl_bits, inverse_flag)
+
+        if condition is not None:
+            ir.add_node_condition(vindex, condition[0], condition[1], condition[2])
 
     def compile(self, circ: Circuit, level: int) -> IR:
         self.__gate_definitions = {}
