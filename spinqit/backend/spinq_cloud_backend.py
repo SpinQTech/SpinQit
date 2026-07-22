@@ -164,10 +164,10 @@ class SpinQCloudBackend:
         i = 0
         while i < ir.dag.vcount():
             v = ir.dag.vs[i]
-            
+            if 'cmp' in v.attributes() and v['cmp'] is not None:
+                raise CircuitOperationValidationError("SpinQ Cloud currently does not support cif operation.")
+
             if (v['type'] == NodeType.op.value or v['type'] == NodeType.callee.value):
-                if hasattr(v, "cmp"):
-                    raise CircuitOperationValidationError("SpinQ Cloud currently does not support cif operation.")
                 if v['name'] == MEASURE.label:
                     raise CircuitOperationValidationError("SpinQ Cloud currently does not support explicit invocation of measure gates. A measure will be done automatically at the end of the circuit.")
                 elif v['name'] == SWAP.label:
