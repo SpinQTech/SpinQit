@@ -104,7 +104,7 @@ gate crz(lambda) a,b
 // controlled rx rotation
 gate crx(lambda) a,b
 {
-  rx(pi/2) b;
+  u1(pi/2) b;
   cx a,b;
   u3(-lambda/2,0,0) b;
   cx a,b;
