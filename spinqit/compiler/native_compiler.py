@@ -17,6 +17,7 @@ from spinqit.model import X, Y, Z, CX, CY, CZ, CCX
 from spinqit.model import Gate, Circuit, MatrixGate, ControlledGate, InverseGate, MultiControlledMatrixGate
 from spinqit.model import UnsupportedGateError
 from spinqit.model.instruction import Instruction
+from spinqit.model.parameter import LazyParameter
 from .ir import IntermediateRepresentation as IR, NodeType
 from .translator.gate_converter import is_primary_gate, decompose_single_qubit_gate, decompose_multi_qubit_gate
 from .optimizer import PassManager
@@ -64,7 +65,12 @@ class NativeCompiler(Compiler):
                 ir.add_caller_matrix(vindex, unitary)
         elif isinstance(gate, ControlledGate) and (isinstance(gate.base_gate, MatrixGate) or 
             gate.base_gate in IR.basis_set):
-            unitary = gate.base_gate.get_matrix(*inst.params)
+            has_lazy_params = any(
+                isinstance(param, LazyParameter) for param in _flatten(inst.params)
+            )
+            unitary = None
+            if len(gate.factors) == 0 or not has_lazy_params:
+                unitary = gate.base_gate.get_matrix(*inst.params)
             ctrl_bits = gate.control_bits
             if gate.base_gate == CX:
                 unitary = X.get_matrix()
@@ -84,7 +90,8 @@ class NativeCompiler(Compiler):
             else:
                 self.add_definition_cluster(ir, gate, len(inst.params), len(inst.qubits), len(inst.clbits))
                 vindex = ir.add_caller_node(gate.label, inst.params, inst.qubits)
-                ir.add_caller_matrix(vindex, unitary, ctrl_bits)
+                if unitary is not None:
+                    ir.add_caller_matrix(vindex, unitary, ctrl_bits)
         elif isinstance(gate, InverseGate) and isinstance(gate.base_gate, MatrixGate): 
             unitary = gate.base_gate.get_matrix(*inst.params)
             inverse_flag = True
