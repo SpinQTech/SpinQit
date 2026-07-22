@@ -36,6 +36,7 @@ class SATSolver:
         variables = set(re.findall(r'[a-zA-Z]', str_expr))
         locals = {v: symbols(v) for v in variables}
         expr = parse_expr(str_expr, local_dict={**locals, 'And': And, 'Or': Or, 'Not': Not})
+        return expr
 
     def calc_qubit_number(self) -> Tuple:
         sym_set = self.expr.atoms(Symbol)
@@ -131,4 +132,3 @@ class SATSolver:
             if simplified_result == True:
                 return assignment
         print('There is no solution for this SAT problem.')
-    
