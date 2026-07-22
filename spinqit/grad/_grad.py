@@ -24,7 +24,9 @@ class qgrad:
         self._fun = fun
 
     def __call__(self, *params):
-        self._grad_fn = self._get_grad_fn(self._fun)
+        self._grad_fn = self._get_grad_fn(
+            self._fun, argnum=tuple(range(len(params)))
+        )
         grad_value, ans = self._grad_fn(*params)
         self._forward = ans
         return grad_value

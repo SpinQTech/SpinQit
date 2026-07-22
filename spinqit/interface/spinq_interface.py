@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 try:
-    from autograd.extend import primitive, defvjp
+    from autograd.extend import primitive, defvjp_argnum
 
 except ImportError:
     raise ImportError(
@@ -57,7 +57,7 @@ def execute(qlayer, *params):
     return loss
 
 
-def execute_vjp(ans, qlayer, *params, **kwargs):
+def execute_vjp(argnum, ans, args, kwargs):
     """
     Return the grads when computing over the ir, for `spinq` interface only.
 
@@ -77,18 +77,18 @@ def execute_vjp(ans, qlayer, *params, **kwargs):
 
     Or it may cause some gradients problems
     """
-    del ans, kwargs, params
+    del ans, kwargs
+    qlayer = args[0]
     backward_fn = qlayer.backward_fn
-    delattr(qlayer, 'backward_fn')
 
     def grad_fn(g):
         if callable(backward_fn):
             grads = backward_fn(g.conj())
         else:
             grads = backward_fn * g.conj()
-        return tuple(Parameter(g) for g in grads)
+        return Parameter(grads[argnum - 1])
 
     return grad_fn
 
 
-defvjp(execute, execute_vjp, argnums=(1,))
+defvjp_argnum(execute, execute_vjp)
