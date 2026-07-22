@@ -71,7 +71,22 @@ def _add_pauli_gate(gate, qubits, ir):
     idx = idx if idx is not False else ir.dag.vcount()
     node_idx_list = []
     if idx == ir.dag.vcount():
-        seq = ir.dag.vs.select(lambda x: len(x.out_edges()) != len(x.in_edges()) and x['type'] != 4)
+        execution_nodes = set()
+        for register in ir.dag.vs.select(type=NodeType.register.value):
+            execution_nodes.update(
+                ir.dag.subcomponent(register.index, mode='out')
+            )
+        quantum_node_types = {
+            NodeType.op.value,
+            NodeType.caller.value,
+            NodeType.init_qubit.value,
+            NodeType.unitary.value,
+        }
+        seq = ir.dag.vs.select(
+            lambda x: x.index in execution_nodes
+            and x['type'] in quantum_node_types
+            and len(x.out_edges()) != len(x.in_edges())
+        )
         node_map = {}
         for v in seq:
             if v['qubits'] is None:
@@ -90,4 +105,3 @@ def _add_pauli_gate(gate, qubits, ir):
         node_idx_list = ir.substitute_nodes([idx], ilist, 0)
         ir.remove_nodes([idx])
         return node_idx_list
-
