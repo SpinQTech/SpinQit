@@ -420,29 +420,25 @@ class IntermediateRepresentation():
         if nodes is None or len(nodes) == 0:
             return
         if keep_edge:
-            in_map = {}
+            node_set = set(nodes)
             for vindex in nodes:
                 in_edges = self.dag.vs[vindex].in_edges()
                 for e in in_edges:
-                    if 'qubit' in e.attributes() and not e['qubit'] in in_map:
-                        in_map[e['qubit']] = e.source
+                    if 'qubit' not in e.attributes() or e['qubit'] is None or e.source in node_set:
+                        continue
 
-            out_map = {}
-            out_list = []
-            out_edges = []
-            for vindex in nodes[::-1]:
-                out_edges.extend(self.dag.vs[vindex].out_edges())
-            out_edges.sort(key = lambda k: k.index)
-            for e in out_edges:
-                if 'qubit' in e.attributes() and not e['qubit'] in out_map:
-                        q = e['qubit']
-                        out_map[q] = e.target
-                        out_list.append(q)
+                    qubit = e['qubit']
+                    current = vindex
+                    while current in node_set:
+                        out_edge = next((edge for edge in self.dag.vs[current].out_edges()
+                                         if 'qubit' in edge.attributes() and edge['qubit'] == qubit), None)
+                        if out_edge is None:
+                            break
+                        current = out_edge.target
 
-            for out_qubit in out_list:
-                leaf = in_map[out_qubit]
-                edge = self.dag.add_edge(leaf, out_map[out_qubit])
-                edge["qubit"] = out_qubit
+                    if current not in node_set:
+                        edge = self.dag.add_edge(e.source, current)
+                        edge["qubit"] = qubit
 
         self.dag.delete_vertices(nodes)
 
