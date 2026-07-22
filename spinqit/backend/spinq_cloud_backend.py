@@ -491,17 +491,14 @@ class SpinQCloudBackend:
         return value_and_grad_fn
 
     def __qubits_and_clbits(self, v):
-            edges = v.in_edges()
-            # in edges order must be the same as the bit order in register to func works correctly
-            edges.sort(key=lambda k: k.index) 
-            qubits = []
-            clbits = []
-            for e in edges:
-                if 'qubit' in e.attributes() and e['qubit'] is not None:
-                    qubits.append(e['qubit'])
-                elif 'clbit' in e.attributes() and e['clbit'] is not None:
-                    clbits.append(e['clbit'])
-            return qubits, clbits
+        # Edge IDs change as earlier gates are substituted and removed, so
+        # their order cannot recover a gate's control/target operand order.
+        qubits = list(v['qubits'])
+        clbits = []
+        for edge in v.in_edges():
+            if 'clbit' in edge.attributes() and edge['clbit'] is not None:
+                clbits.append(edge['clbit'])
+        return qubits, clbits
 
     def evaluate(self, ir, config, measure_op):
         if measure_op is None:
