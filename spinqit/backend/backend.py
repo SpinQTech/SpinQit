@@ -73,7 +73,8 @@ def check_backend_and_config(backend_mode, **kwargs):
         from .spinq_cloud_backend import SpinQCloudConfig
         username = kwargs.get('username', None)
         keyfile = kwargs.get('keyfile', None)
-        backend = SpinQCloudBackend(username, keyfile)
+        host = kwargs.get('host', 'http://cloud.spinq.cn:6060')
+        backend = SpinQCloudBackend(username, keyfile, host)
         config = SpinQCloudConfig()
         platform = kwargs.get('platform', 'triangulum_vp')
         shots = kwargs.get('shots', 1024)
