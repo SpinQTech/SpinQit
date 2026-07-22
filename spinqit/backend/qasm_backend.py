@@ -16,6 +16,7 @@ from copy import deepcopy
 
 import numpy as onp
 from scipy import sparse
+from sympy import Symbol
 
 from spinqit import CP
 from spinqit.compiler.ir import NodeType
@@ -42,6 +43,50 @@ gate_name = {
     'i': 'id',
     CP.label.lower(): 'cp'
 }
+
+
+def _flatten_qasm_parameters(value):
+    if isinstance(value, (list, tuple, onp.ndarray)):
+        result = []
+        for item in value:
+            result.extend(_flatten_qasm_parameters(item))
+        return result
+    return [str(value)]
+
+
+def _render_definition_parameters(vertex, parameter_names):
+    params = vertex['params']
+    pindex = vertex['pindex']
+    expressions = vertex['expression']
+    rendered = []
+
+    if expressions:
+        start = 0
+        for param, expression in zip(params, expressions):
+            arg_count = param.__code__.co_argcount
+            args = [
+                parameter_names[index]
+                for index in pindex[start:start + arg_count]
+            ]
+            start += arg_count
+            rendered.extend(_flatten_qasm_parameters(eval(expression)(*args)))
+        return rendered
+
+    symbols = [Symbol(name) for name in parameter_names]
+    if len(pindex) == 1 and pindex[0] == -1:
+        for param in params:
+            value = param() if param.__code__.co_argcount == 0 else param(symbols)
+            rendered.extend(_flatten_qasm_parameters(value))
+        return rendered
+
+    start = 0
+    for param in params:
+        arg_count = param.__code__.co_argcount
+        args = [symbols[index] for index in pindex[start:start + arg_count]]
+        start += arg_count
+        value = param(*args)
+        rendered.extend(_flatten_qasm_parameters(value))
+    return rendered
 
 
 class QasmConfig:
@@ -280,23 +325,7 @@ class QasmBackend:
                         qubits = [qargs[i] for i in _v['qubits']]
                         param = _v['params']
                         if 'pindex' in _v.attributes() and _v['pindex'] is not None:
-                            start = 0
-                            _v_pargs = []
-                            for f in param:
-                                arg_count = f.__code__.co_argcount
-                                if arg_count == 0:
-                                    _v_pargs.append(str(f()))
-                                else:
-                                    _v_pargs.append(list(pargs[i] for i in _v['pindex'][start:start + arg_count]))
-                                    start += arg_count
-                            if _v['expression'] is None:
-                                _v_expression = sum(_v_pargs, [])
-                            else:
-                                expression_list = _v['expression']
-                                _v_expression = []
-                                for i, expression in enumerate(expression_list):
-                                    func = eval(expression)
-                                    _v_expression.append(func(*_v_pargs[i]))
+                            _v_expression = _render_definition_parameters(_v, pargs)
                             qasm_content += f'{_gate}({",".join(_v_expression)}) {",".join(qubits)};\n'
                         else:
                             qasm_content += f'{_gate} {",".join(qubits)};\n'
