@@ -55,12 +55,12 @@ def schmidt_decompose(psi,
     amp_mtr = psi.reshape([2 ** len(sys_A), 2 ** len(sys_B)])
 
     # Standard process to obtain schmidt decomposition
-    u, c, v = sparse.linalg.svds(amp_mtr, k=3)
+    u, c, v = np.linalg.svd(amp_mtr, full_matrices=False)
 
-    k = np.count_nonzero(c > 1e-13)
-    c = (c[:k])
-    u = (u.T[:k].reshape([k, -1, 1]))
-    v = (v[:k].reshape([k, -1, 1]))
+    keep = c > 1e-13
+    c = c[keep]
+    u = u[:, keep].T.reshape([len(c), -1, 1])
+    v = v[keep].reshape([len(c), -1, 1])
     return c, u, v
 
 
