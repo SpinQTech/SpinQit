@@ -272,6 +272,7 @@ class Qasm2EventListener(Qasm2Listener):
                     self.conditional_gates.append(vindex)
             else:
                 duplicates = set()
+                gate_qarg_groups = []
                 for index_id_ctx in index_id_list:
                     id = index_id_ctx.Identifier().getText()
                     if not id in self.qregister_table:
@@ -282,7 +283,7 @@ class Qasm2EventListener(Qasm2Listener):
                     qubits = self.qregister_table[id]
                     exp_list_ctx = index_id_ctx.expressionList()
                     if exp_list_ctx is None:
-                        gate_qargs.extend(qubits)
+                        gate_qarg_groups.append(qubits)
                     else:
                         exp_list = exp_list_ctx.expression()
                         if len(exp_list) > 1:
@@ -305,26 +306,16 @@ class Qasm2EventListener(Qasm2Listener):
                             raise Exception(
                                 f'The register index is out of range in line {ctx.start.line}. '
                             )
-                        gate_qargs.append(qubits[index])
-                if len(gate_qargs) != self.gate_sym_table[gate_name.lower()]:
-                    start = 0
-                    while start < len(gate_qargs):
-                        if gate_name.lower() in qasm_basis_map.keys():
-                            vindex = self.ir.add_op_node(qasm_basis_map[gate_name.lower()].label,
-                                                         gate_params,
-                                                         gate_qargs[
-                                                         start:start + self.gate_sym_table[gate_name.lower()]],
-                                                         [])
-                        else:
-                            vindex = self.ir.add_caller_node(gate_name,
-                                                             gate_params,
-                                                             gate_qargs[
-                                                             start:start + self.gate_sym_table[gate_name.lower()]],
-                                                             [])
-                        if self.branching:
-                            self.conditional_gates.append(vindex)
-                        start += self.gate_sym_table[gate_name.lower()]
-                else:
+                        gate_qarg_groups.append([qubits[index]])
+
+                register_size = max(len(group) for group in gate_qarg_groups)
+                if any(len(group) not in (1, register_size) for group in gate_qarg_groups):
+                    raise Exception(
+                        f'The register sizes for gate `{gate_name}` do not match in line {ctx.start.line}. '
+                    )
+                for index in range(register_size):
+                    gate_qargs = [group[index] if len(group) > 1 else group[0]
+                                  for group in gate_qarg_groups]
                     if gate_name.lower() in qasm_basis_map.keys():
                         vindex = self.ir.add_op_node(qasm_basis_map[gate_name.lower()].label, gate_params, gate_qargs, [])
                     else:
