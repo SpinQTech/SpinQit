@@ -283,7 +283,7 @@ class Qasm2EventListener(Qasm2Listener):
                     qubits = self.qregister_table[id]
                     exp_list_ctx = index_id_ctx.expressionList()
                     if exp_list_ctx is None:
-                        gate_qarg_groups.append(qubits)
+                        gate_qarg_groups.append((qubits, True))
                     else:
                         exp_list = exp_list_ctx.expression()
                         if len(exp_list) > 1:
@@ -306,16 +306,18 @@ class Qasm2EventListener(Qasm2Listener):
                             raise Exception(
                                 f'The register index is out of range in line {ctx.start.line}. '
                             )
-                        gate_qarg_groups.append([qubits[index]])
+                        gate_qarg_groups.append(([qubits[index]], False))
 
-                register_size = max(len(group) for group in gate_qarg_groups)
-                if any(len(group) not in (1, register_size) for group in gate_qarg_groups):
+                register_sizes = {len(group) for group, is_register in gate_qarg_groups
+                                  if is_register}
+                if len(register_sizes) > 1:
                     raise Exception(
                         f'The register sizes for gate `{gate_name}` do not match in line {ctx.start.line}. '
                     )
+                register_size = next(iter(register_sizes), 1)
                 for index in range(register_size):
-                    gate_qargs = [group[index] if len(group) > 1 else group[0]
-                                  for group in gate_qarg_groups]
+                    gate_qargs = [group[index] if is_register else group[0]
+                                  for group, is_register in gate_qarg_groups]
                     if gate_name.lower() in qasm_basis_map.keys():
                         vindex = self.ir.add_op_node(qasm_basis_map[gate_name.lower()].label, gate_params, gate_qargs, [])
                     else:
