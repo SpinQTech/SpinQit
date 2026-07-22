@@ -189,7 +189,10 @@ class TorchResult:
         return probabilities, higher_dim
 
     def get_random_reading(self):
-        return onp.random.choice(list(self.counts.keys()))
+        probabilities = self.probabilities
+        readings = list(probabilities)
+        weights = onp.array([probabilities[reading] for reading in readings])
+        return onp.random.choice(readings, p=weights / weights.sum())
 
 
 class TorchSimulator:
