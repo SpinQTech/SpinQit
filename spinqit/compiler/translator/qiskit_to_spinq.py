@@ -67,13 +67,14 @@ def add_instruction(qc: qqc.QuantumCircuit, circ: Circuit, qreg_map: Dict, creg_
         pass
    
     for instruction, qargs, cargs in qc.data:
+        instruction_condition = condition
         if instruction.condition is not None:
             classical = instruction.condition[0]
             if isinstance(classical, (qqc.Clbit, ext_Clbit)):
                 clbits = [creg_map[classical.register.name][classical.index]]
             else:
                 clbits = creg_map[classical.name]
-            condition = (clbits, '==', int(instruction.condition[1]))        
+            instruction_condition = (clbits, '==', int(instruction.condition[1]))
 
         if not isinstance(instruction, (qqc.Gate, qqc.Instruction, qqc.Measure, qqc.Barrier, 
             ext_Gate, ext_Instruction, ext_Measure, ext_Barrier)):
@@ -100,15 +101,15 @@ def add_instruction(qc: qqc.QuantumCircuit, circ: Circuit, qreg_map: Dict, creg_
             params = instruction.params
             
             if params is not None and len(params) > 0:
-                if condition is not None:
-                    circ<< (gate, qlist, params) | condition
+                if instruction_condition is not None:
+                    circ<< (gate, qlist, params) | instruction_condition
                 else:
                     circ<< (gate, qlist, params)
             else:    
-                if condition is not None:
+                if instruction_condition is not None:
                     if gate == MEASURE:
                         raise UnsupportedQiskitInstructionError('Measure cannot be conditional.')
-                    circ<< (gate, qlist) | condition
+                    circ<< (gate, qlist) | instruction_condition
                 else:
                     if gate == MEASURE:
                         circ.measure(qlist, clist)
@@ -117,6 +118,4 @@ def add_instruction(qc: qqc.QuantumCircuit, circ: Circuit, qreg_map: Dict, creg_
         elif isinstance(instruction, (qqc.Barrier, ext_Barrier)):
             continue
         else:
-            add_instruction(instruction.definition, circ, qreg_map, creg_map, sub_qubits, condition)
-        
-        
+            add_instruction(instruction.definition, circ, qreg_map, creg_map, sub_qubits, instruction_condition)
