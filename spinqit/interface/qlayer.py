@@ -52,6 +52,13 @@ class QLayer:
         self.place_holder = tuple(x[1] for x in sorted(circuit.place_holder, key=lambda x: x[0]))
         self.ir = deepcopy(ir)
         self.measure_op = measure
+        if (grad_method == 'adjoint_differentiation'
+                and isinstance(getattr(measure, 'hamiltonian', None), list)):
+            from spinqit.primitive.pauli_expectation import generate_hamiltonian_matrix
+            self.measure_op = deepcopy(measure)
+            self.measure_op.hamiltonian = generate_hamiltonian_matrix(
+                measure.hamiltonian
+            )
         self.backend_mode = backend_mode
         self.interface = interface
         self.qubits_num = ir.qnum

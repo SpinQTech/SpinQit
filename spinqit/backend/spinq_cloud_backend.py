@@ -164,10 +164,10 @@ class SpinQCloudBackend:
         i = 0
         while i < ir.dag.vcount():
             v = ir.dag.vs[i]
-            
+            if 'cmp' in v.attributes() and v['cmp'] is not None:
+                raise CircuitOperationValidationError("SpinQ Cloud currently does not support cif operation.")
+
             if (v['type'] == NodeType.op.value or v['type'] == NodeType.callee.value):
-                if hasattr(v, "cmp"):
-                    raise CircuitOperationValidationError("SpinQ Cloud currently does not support cif operation.")
                 if v['name'] == MEASURE.label:
                     raise CircuitOperationValidationError("SpinQ Cloud currently does not support explicit invocation of measure gates. A measure will be done automatically at the end of the circuit.")
                 elif v['name'] == SWAP.label:
@@ -297,6 +297,8 @@ class SpinQCloudBackend:
 
     def submit_task(self, ir: IntermediateRepresentation, config: SpinQCloudConfig, calc_matrix: bool = False, process_now: bool = True, debug: bool = False):
         # get params from config
+        calc_matrix = config.metadata.get('calc_matrix', calc_matrix)
+        process_now = config.metadata.get('process_now', process_now)
         platform_code = config.metadata['platform']
         log_to_phy = None
         if 'keep_layout' in config.metadata and config.metadata['keep_layout'] is not None:
@@ -363,7 +365,15 @@ class SpinQCloudBackend:
         if res:
             res_entity = json.loads(res.content)
             task_dict = res_entity["task"]
-            task = Task(task_dict["tname"], task_dict["platformCode"], None, task_dict["calcMatrix"], task_dict["shots"], description=task_dict["description"] )
+            task = Task(
+                name=task_dict["tname"],
+                platform_code=task_dict["platformCode"],
+                bitNum=task_dict["bitNum"],
+                clbitnum=task_dict["clbitNum"],
+                calc_matrix=task_dict["calcMatrix"],
+                shots=task_dict["shots"],
+                description=task_dict["description"],
+            )
             task.set_task_code(task_dict["tcode"])
             task.set_status(task_dict["tstatus"])
             if task_dict["createdTime"] is not None:
@@ -481,17 +491,14 @@ class SpinQCloudBackend:
         return value_and_grad_fn
 
     def __qubits_and_clbits(self, v):
-            edges = v.in_edges()
-            # in edges order must be the same as the bit order in register to func works correctly
-            edges.sort(key=lambda k: k.index) 
-            qubits = []
-            clbits = []
-            for e in edges:
-                if 'qubit' in e.attributes() and e['qubit'] is not None:
-                    qubits.append(e['qubit'])
-                elif 'clbit' in e.attributes() and e['clbit'] is not None:
-                    clbits.append(e['clbit'])
-            return qubits, clbits
+        # Edge IDs change as earlier gates are substituted and removed, so
+        # their order cannot recover a gate's control/target operand order.
+        qubits = list(v['qubits'])
+        clbits = []
+        for edge in v.in_edges():
+            if 'clbit' in edge.attributes() and edge['clbit'] is not None:
+                clbits.append(edge['clbit'])
+        return qubits, clbits
 
     def evaluate(self, ir, config, measure_op):
         if measure_op is None:

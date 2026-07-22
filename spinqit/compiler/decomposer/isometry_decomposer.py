@@ -252,7 +252,7 @@ def build_gate_for_isometry(isometry: np.ndarray) -> Gate:
 
     if len(diag_mat) > 1 and not check_diag_is_identity(diag_mat):
         diag_gate = generate_diagonal_gates(diag_mat)
-        isometry_builder.append(diag_gate, list(range(qubit_num)))
+        isometry_builder.append(diag_gate, list(reversed(range(qubit_num))))
     
     isometry_builder.append(inv_builder.to_gate(), list(range(qubit_num-1, -1, -1)))
     return isometry_builder.to_gate()

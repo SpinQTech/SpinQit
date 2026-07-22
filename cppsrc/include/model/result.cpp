@@ -15,6 +15,7 @@
  */
 
 #include "result.h"
+#include <algorithm>
 int Result::repeat = 1024;
 
 Result::Result(/* args */)
@@ -36,39 +37,32 @@ string Result::to_string(long key, size_t qnum)
 
 map<string, int> Result::get_counts()
 {
-    if (!counts.empty()) return counts;
-    
-    vector<string> less;
+    if (!counts.empty() || probabilities.empty() || shots <= 0) return counts;
+
+    double probability_total = 0.0;
+    for (const auto& entry : probabilities) {
+        probability_total += max(0.0, entry.second);
+    }
+    if (probability_total == 0.0) return counts;
+
+    vector<pair<double, string>> remainders;
     int sum = 0;
-    for (auto it = probabilities.begin(); it != probabilities.end(); ++it) {
-        double p = it->second;
-        double val = p * shots;
-        int cnt = (int)val;
-        double rval = round(val);
+    for (const auto& entry : probabilities) {
+        double expected = max(0.0, entry.second) * shots / probability_total;
+        int cnt = (int)floor(expected);
         if (cnt > 0) {
-            counts[it->first] = cnt;
-            sum += cnt;
+            counts[entry.first] = cnt;
         }
-        if(rval > val) less.push_back(it->first); 
+        sum += cnt;
+        remainders.emplace_back(expected - cnt, entry.first);
     }
-    int total = shots - sum;
-    if (total > 0) {
-        for (size_t i = 0; i < less.size(); i++)
-        {
-            counts[less[i]] += 1;
-            total--;
-            if(total==0) break;
-        }
+
+    sort(remainders.begin(), remainders.end(),
+         [](const auto& left, const auto& right) { return left.first > right.first; });
+    for (int i = 0; i < shots - sum; ++i) {
+        counts[remainders[i % remainders.size()].second] += 1;
     }
-    
-    while (total > 0) {
-        for (auto it = counts.begin(); it != counts.end(); ++it ) {
-            it->second += 1;
-            total--;
-            if(total==0) break;
-        }
-    }
-    
+
     return counts;
 }
 

@@ -15,7 +15,7 @@
 from igraph import Vertex, Graph
 from ..ir import NodeType
 from .util import get_qubits, get_paths
-from spinqit.model import I, H, X, Y, Z, Rx, Ry, Rz, T, Td, S, Sd, P, CX, CY, CZ, SWAP, CCX
+from spinqit.model import H, X, Y, Z, Rx, Ry, Rz, T, Td, S, Sd, P, CX, CY, CZ, SWAP, CCX
 
 X_series = {X.label, Rx.label}
 Y_series = {Y.label, Ry.label}
@@ -47,8 +47,6 @@ def is_commutative(cur: Vertex, pre: Vertex):
         pre_qubits = set(pre['qubits'])
         if cur_qubits != pre_qubits:
             return False
-        return True
-    elif cur['name'] == I.label:
         return True
     else:
         return False

@@ -57,8 +57,8 @@ def adjoint_differentiation(ir, params, measure_op, res):
         if func is not None and node_params is not None:
             for i, param in enumerate(node_params):
                 if requires_grad(param):
-                    func = func[i]
-                    coeffs = egrad(func)(total_params)
+                    param_func = func[i]
+                    coeffs = egrad(param_func)(total_params)
                     gen_mat = generator[label]
                     d_theta = 1j * gen_mat @ mat
                     tmp_ket = _apply_gate(ket, d_theta, qubits, qubit_num)
@@ -84,19 +84,33 @@ def adjoint_differentiation(ir, params, measure_op, res):
             node = graph.vs[node_idx]
             if node.index != def_node.index:
                 local = [qubits[i] for i in node['qubits']]
-                plambda = node['params'] if 'params' in node.attributes else None
-                callee_params = [f(params) for f in plambda] if not plambda else []
+                plambda = node['params'] if 'params' in node.attributes() else []
+                plambda = plambda or []
+                callee_params = [
+                    f(params) if callable(f) else f for f in plambda
+                ]
+                callee_funcs = []
+                for param_lambda in plambda:
+                    if callable(param_lambda):
+                        def composed(total, inner=param_lambda):
+                            caller_params = [
+                                f(total) if callable(f) else f for f in func
+                            ]
+                            return inner(caller_params)
+                        callee_funcs.append(composed)
+                    else:
+                        callee_funcs.append(param_lambda)
                 if node['type'] == 3:
                     bra, ket = _op_node(node['name'], qubits_num,
                                         bra, ket,
                                         grads,
-                                        func, callee_params, local,
+                                        callee_funcs, callee_params, local,
                                         total_params, dy)
                 elif node['type'] == 1:
                     bra, ket = _caller_node(node['name'], qubits_num,
                                             bra, ket,
                                             grads,
-                                            func, callee_params,
+                                            callee_funcs, callee_params,
                                             local, graph,
                                             total_params, dy)
         return bra, ket

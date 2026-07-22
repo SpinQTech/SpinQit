@@ -41,12 +41,12 @@ class VQE(object):
         self.optimizer = optimizer
         self.fn = None
         self.hamiltonian = hamiltonian
+        self.__depth = depth
         if params is not None:
             if isinstance(params, tuple):
                 params = np.random.uniform(0, 2 * np.pi, params)
             self.params = Parameter(params, trainable=True)
         else:
-            self.__depth = depth
             self.params = Parameter(np.random.uniform(0, 2 * np.pi, (depth, self.__qubit_num, 3)),
                                     trainable=True)
         if ansatz is not None:

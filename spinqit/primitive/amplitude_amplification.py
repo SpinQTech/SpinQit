@@ -45,7 +45,7 @@ class AmplitudeAmplification(object):
         inst_list.append(Instruction(xBuilder.to_gate(), self.__reflection_qubits))
         
         if len(self.__reflection_qubits) == 1:
-            inst_list.append(Instruction(Z, self.__reflection_qubits[0]))
+            inst_list.append(Instruction(Z, [self.__reflection_qubits[0]]))
         else:
             mcz_builder = MultiControlledGateBuilder(len(self.__reflection_qubits) - 1, gate=Z)
             inst_list.append(Instruction(mcz_builder.to_gate(), self.__reflection_qubits, []))

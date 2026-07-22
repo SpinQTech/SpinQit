@@ -46,7 +46,8 @@ class ScipyOptimizer(Optimizer):
                 print('Optimize: step {}, loss: {},'.format(len(loss_list) + 1, loss))
             loss_list.append(loss)
 
-        minimize(fn, x0=params[0],
-                 method=self.method, options=self.options, callback=callback_fn,
-                 tol=self.tol, **self.kwargs)
+        result = minimize(fn, x0=params[0],
+                          method=self.method, options=self.options, callback=callback_fn,
+                          tol=self.tol, **self.kwargs)
+        params[0][...] = result.x
         return loss_list

@@ -17,6 +17,7 @@ from spinqit.model import X, Y, Z, CX, CY, CZ, CCX
 from spinqit.model import Gate, Circuit, MatrixGate, ControlledGate, InverseGate, MultiControlledMatrixGate
 from spinqit.model import UnsupportedGateError
 from spinqit.model.instruction import Instruction
+from spinqit.model.parameter import LazyParameter
 from .ir import IntermediateRepresentation as IR, NodeType
 from .translator.gate_converter import is_primary_gate, decompose_single_qubit_gate, decompose_multi_qubit_gate
 from .optimizer import PassManager
@@ -54,8 +55,6 @@ class NativeCompiler(Compiler):
         gate = inst.gate
         if gate in IR.basis_set or gate.label in IR.label_set:
             vindex = ir.add_op_node(inst.get_op(), inst.params, inst.qubits, inst.clbits)
-            if condition != None:
-                ir.add_node_condition(vindex, condition[0], condition[1], condition[2])
         elif isinstance(gate, MatrixGate):
             unitary = gate.get_matrix(*inst.params)
             if len(gate.factors) == 0:      
@@ -66,7 +65,12 @@ class NativeCompiler(Compiler):
                 ir.add_caller_matrix(vindex, unitary)
         elif isinstance(gate, ControlledGate) and (isinstance(gate.base_gate, MatrixGate) or 
             gate.base_gate in IR.basis_set):
-            unitary = gate.base_gate.get_matrix(*inst.params)
+            has_lazy_params = any(
+                isinstance(param, LazyParameter) for param in _flatten(inst.params)
+            )
+            unitary = None
+            if len(gate.factors) == 0 or not has_lazy_params:
+                unitary = gate.base_gate.get_matrix(*inst.params)
             ctrl_bits = gate.control_bits
             if gate.base_gate == CX:
                 unitary = X.get_matrix()
@@ -86,7 +90,8 @@ class NativeCompiler(Compiler):
             else:
                 self.add_definition_cluster(ir, gate, len(inst.params), len(inst.qubits), len(inst.clbits))
                 vindex = ir.add_caller_node(gate.label, inst.params, inst.qubits)
-                ir.add_caller_matrix(vindex, unitary, ctrl_bits)
+                if unitary is not None:
+                    ir.add_caller_matrix(vindex, unitary, ctrl_bits)
         elif isinstance(gate, InverseGate) and isinstance(gate.base_gate, MatrixGate): 
             unitary = gate.base_gate.get_matrix(*inst.params)
             inverse_flag = True
@@ -114,11 +119,14 @@ class NativeCompiler(Compiler):
                 ctrl_bits += 2
             
             if len(gate.factors) == 0:  
-                ir.add_unitary_node(gate.label, unitary, inst.qubits, ctrl_bits, inverse_flag)
+                vindex = ir.add_unitary_node(gate.label, unitary, inst.qubits, ctrl_bits, inverse_flag)
             else:
                 self.add_definition_cluster(ir, gate, len(inst.params), len(inst.qubits), len(inst.clbits))
                 vindex = ir.add_caller_node(gate.label, inst.params, inst.qubits)
                 ir.add_caller_matrix(vindex, unitary, ctrl_bits, inverse_flag)
+
+        if condition is not None:
+            ir.add_node_condition(vindex, condition[0], condition[1], condition[2])
 
     def compile(self, circ: Circuit, level: int) -> IR:
         self.__gate_definitions = {}
@@ -135,7 +143,47 @@ class NativeCompiler(Compiler):
 
         for inst in circ.instructions:
             gate = inst.gate
-            if is_primary_gate(gate):
+            has_lazy_params = any(
+                isinstance(param, LazyParameter)
+                for param in _flatten(inst.params)
+            )
+            lower_symbolic_controlled = (
+                isinstance(gate, ControlledGate)
+                and len(gate.factors) > 0
+                and has_lazy_params
+            )
+            lower_controlled = (
+                isinstance(gate, ControlledGate)
+                and not has_lazy_params
+                and (
+                    (isinstance(gate.base_gate, MatrixGate)
+                     and len(gate.factors) == 0)
+                    or (gate.control_bits > 1
+                        and gate.base_gate.qubit_num == 1)
+                )
+            )
+            if lower_symbolic_controlled:
+                # Parameter-shift rules apply to the native rotations in the
+                # decomposition, not generally to the controlled gate as a
+                # whole because its generator can have three eigenvalues.
+                ilist = decompose_multi_qubit_gate(
+                    gate, inst.qubits, inst.params
+                )
+                for i in ilist:
+                    self.handle_primary_gate(ir, i, inst.condition)
+            elif lower_controlled:
+                # A raw controlled matrix becomes an IR ``unitary`` node, which
+                # execution and serialization backends do not implement. Nested
+                # control also makes a subgate's global phase observable. Lower
+                # both forms from the exact base matrix before constructing IR.
+                from spinqit.primitive.multi_controlled_gate_builder import MultiControlledGateBuilder
+                lowered_gate = MultiControlledGateBuilder(
+                    gate.control_bits, gate.base_gate, inst.params
+                ).to_gate()
+                ilist = decompose_multi_qubit_gate(lowered_gate, inst.qubits)
+                for i in ilist:
+                    self.handle_primary_gate(ir, i, inst.condition)
+            elif is_primary_gate(gate):
                 self.handle_primary_gate(ir, inst, inst.condition)
             else:
                 if gate.qubit_num == 1:

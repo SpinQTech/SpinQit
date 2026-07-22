@@ -6,11 +6,13 @@ import numpy as np
 from spinqit import (
     BasicSimulatorConfig,
     Circuit,
+    CX,
     CZ,
     H,
     Rx,
     Ry,
     Rz,
+    SWAP,
     X,
     Y,
     Z,
@@ -131,6 +133,28 @@ class NativeOptimizerRegressionTests(unittest.TestCase):
                         candidate = self.simulate(compiler.compile(circuit, level))
                         fidelity = float(abs(np.vdot(reference, candidate)) ** 2)
                         self.assertGreaterEqual(fidelity, 1.0 - 1e-8)
+
+    def test_two_qubit_collapse_does_not_reject_valid_circuit(self):
+        circuit = Circuit('two-qubit-collapse')
+        circuit.allocateQubits(2)
+        for gate, qubits in (
+            (CZ, [0, 1]),
+            (CX, [1, 0]),
+            (CX, [1, 0]),
+            (SWAP, [1, 0]),
+            (CZ, [0, 1]),
+            (SWAP, [0, 1]),
+            (SWAP, [0, 1]),
+        ):
+            circuit << (gate, qubits)
+
+        compiler = get_compiler('native')
+        reference = self.simulate(compiler.compile(circuit, 0))
+        for level in (2, 3):
+            with self.subTest(level=level):
+                candidate = self.simulate(compiler.compile(circuit, level))
+                fidelity = float(abs(np.vdot(reference, candidate)) ** 2)
+                self.assertGreaterEqual(fidelity, 1.0 - 1e-9)
 
 
 if __name__ == '__main__':

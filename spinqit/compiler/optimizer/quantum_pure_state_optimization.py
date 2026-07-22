@@ -75,6 +75,7 @@ class PureStateOnU(object):
                         new_dag = self.swap_to_u_dag(qargs[0], qargs[1])
                         ir.substitute_nodes([v], new_dag, ir.dag.vs[v]['type'])
                         non_keep_list.append(v)
+                        self.wire_state.swap(qargs[0], qargs[1])
                     elif which_swap in ['left', 'right']:
                         new_dag = self.aswap_to_u_dag(qargs[0], qargs[1], which_swap)
                         ir.substitute_nodes([v], new_dag, ir.dag.vs[v]['type'])
@@ -89,8 +90,13 @@ class PureStateOnU(object):
                     for qarg in qargs:
                         self.wire_state[qarg] = None
                         
-        ir.remove_nodes(keep_list, True)
-        ir.remove_nodes(non_keep_list, False)
+        removed = sorted(set(non_keep_list))
+        ir.remove_nodes(removed, False)
+        remapped_keep = [
+            node - sum(previous < node for previous in removed)
+            for node in keep_list
+        ]
+        ir.remove_nodes(remapped_keep, True)
 
     def check_single_qubit_gate(self, v: Vertex):
         if (v['type'] == NodeType.op.value or v['type'] == NodeType.callee.value) \

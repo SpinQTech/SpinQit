@@ -157,6 +157,14 @@ static int exec_callable_vertex_attr(const igraph_t *graph,
     long i,j;
     for (i=0,j=0; i<length; i++) {
         PyObject *fn = PyList_GetItem(functions, i);
+        if (!PyCallable_Check(fn)) {
+            PyObject *number = PyNumber_Float(fn);
+            if (number == NULL) return IGRAPH_EINVAL;
+            VECTOR(*value)[i] = PyFloat_AsDouble(number);
+            Py_DECREF(number);
+            continue;
+        }
+        if (!PyFunction_Check(fn)) return IGRAPH_EINVAL;
         PyCodeObject *code = (PyCodeObject*)PyFunction_GET_CODE(fn);
         int argcount = code->co_argcount;
 

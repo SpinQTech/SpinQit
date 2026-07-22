@@ -68,6 +68,33 @@ rotations = {
 }
 
 
+def _resolve_callee_params(functions, indexes, params):
+    if not functions:
+        return []
+
+    result = []
+    if indexes == [-1]:
+        for function in functions:
+            if not callable(function):
+                result.append(function)
+            elif function.__code__.co_argcount == 0:
+                result.append(function())
+            else:
+                result.append(function(params))
+        return result
+
+    start = 0
+    for function in functions:
+        if not callable(function):
+            result.append(function)
+            continue
+        arg_count = function.__code__.co_argcount
+        args = [params[index] for index in indexes[start:start + arg_count]]
+        start += arg_count
+        result.append(function(*args))
+    return result
+
+
 class TorchSimulatorConfig:
     def __init__(self):
         self.mqubits = None
@@ -169,7 +196,7 @@ class TorchResult:
 
     @staticmethod
     def _process_prob(config, np_states):
-        qubit_num = int(onp.log2(np_states.shape[-1:]))
+        qubit_num = int(onp.log2(np_states.shape[-1]))
         probabilities = torch.abs(np_states) ** 2
         higher_dim = list(probabilities.shape[:-1])
         if config.mqubits is not None:
@@ -189,7 +216,10 @@ class TorchResult:
         return probabilities, higher_dim
 
     def get_random_reading(self):
-        return onp.random.choice(list(self.counts.keys()))
+        probabilities = self.probabilities
+        readings = list(probabilities)
+        weights = onp.array([probabilities[reading] for reading in readings])
+        return onp.random.choice(readings, p=weights / weights.sum())
 
 
 class TorchSimulator:
@@ -238,9 +268,10 @@ class TorchSimulator:
         else:
             state = torch.as_tensor(states, device=device, dtype=dtype)
 
-        if not torch.allclose((state ** 2).sum().real, torch.tensor(1., dtype=state.real.dtype)):
+        norm = torch.sum(torch.abs(state) ** 2, dim=-1)
+        if not torch.allclose(norm, torch.ones_like(norm)):
             raise ValueError(
-                f'The `StateVector` is not a quantum state, expected norm(state) to be 1, but got {(state ** 2).sum().real}'
+                f'The `StateVector` is not a quantum state, expected norm(state) to be 1, but got {norm}'
             )
 
         if state.size(-1) != 2 ** qubits_num:
@@ -279,13 +310,13 @@ class TorchSimulator:
                 local = [qubits[i] for i in node['qubits']]
                 plambda = None if 'params' not in node.attributes() else node['params']
                 if 'pindex' in node.attributes() and node['pindex'] is not None:
-                    try:
-                        p = [f(*[params[idx] for idx in node['pindex']]) for f in plambda]
-                    except Exception:
-                        p = [f([params[idx] for idx in node['pindex']]) for f in plambda]
-                    callee_params = [] if not plambda else p
+                    callee_params = _resolve_callee_params(
+                        plambda, node['pindex'], params
+                    )
                 else:
-                    callee_params = [] if not plambda else [f(params) for f in plambda]
+                    callee_params = [] if not plambda else [
+                        f(params) if callable(f) else f for f in plambda
+                    ]
                 if node['type'] == 3:
                     state = self._op_node(node['name'], callee_params, state, local, qubits_num)
                 elif node['type'] == 1:
@@ -365,10 +396,7 @@ def torch_pauli_expectation(pauli_string, probabilities):
             raise ValueError('The input string is not a Pauli string')
 
     f = functools.reduce(torch.kron, mat)
-    if len(probabilities.shape) < 2:
-        probabilities = probabilities.unsqueeze(0)
-    expect_val = (probabilities * f).sum(dim=1)
-    return expect_val[0]
+    return (probabilities * f).sum(dim=-1)
 
 
 class TorchSimulatorBackend(BaseBackend):
@@ -431,7 +459,9 @@ class TorchSimulatorBackend(BaseBackend):
                         f'Expected `np.ndarray, sparse.csr_matrix, list`, but got `{type(hamiltonian)}`'
                     )
                 if isinstance(hamiltonian, onp.ndarray):
-                    hamiltonian = torch.as_tensor(hamiltonian, dtype, device)
+                    hamiltonian = torch.as_tensor(
+                        hamiltonian, dtype=dtype, device=device
+                    )
                 elif isinstance(hamiltonian, sparse.csr_matrix):
                     hamiltonian = self._scipy_sparse_mat_to_torch_sparse_tensor(hamiltonian)
                 else:

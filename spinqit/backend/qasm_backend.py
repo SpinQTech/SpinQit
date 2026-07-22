@@ -12,11 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import functools
-from collections import defaultdict
 from copy import deepcopy
 
 import numpy as onp
 from scipy import sparse
+from sympy import Symbol
 
 from spinqit import CP
 from spinqit.compiler.ir import NodeType
@@ -43,6 +43,57 @@ gate_name = {
     'i': 'id',
     CP.label.lower(): 'cp'
 }
+
+qelib_gate_names = {
+    'u3', 'u2', 'u1', 'u0', 'u', 'p', 'cx', 'id', 'x', 'y', 'z', 'h',
+    's', 'sdg', 't', 'tdg', 'rx', 'ry', 'rz', 'sx', 'sxdg', 'cz', 'cy',
+    'swap', 'ch', 'ccx', 'cswap', 'cry', 'crz', 'crx', 'cu1', 'cp', 'cu3',
+    'csx', 'cu', 'rxx', 'rzz', 'rccx', 'rc3x', 'c3x', 'c3sqrtx', 'c4x',
+}.union(gate_name)
+
+
+def _flatten_qasm_parameters(value):
+    if isinstance(value, (list, tuple, onp.ndarray)):
+        result = []
+        for item in value:
+            result.extend(_flatten_qasm_parameters(item))
+        return result
+    return [str(value)]
+
+
+def _render_definition_parameters(vertex, parameter_names):
+    params = vertex['params']
+    pindex = vertex['pindex']
+    expressions = vertex['expression']
+    rendered = []
+
+    if expressions:
+        start = 0
+        for param, expression in zip(params, expressions):
+            arg_count = param.__code__.co_argcount
+            args = [
+                parameter_names[index]
+                for index in pindex[start:start + arg_count]
+            ]
+            start += arg_count
+            rendered.extend(_flatten_qasm_parameters(eval(expression)(*args)))
+        return rendered
+
+    symbols = [Symbol(name) for name in parameter_names]
+    if len(pindex) == 1 and pindex[0] == -1:
+        for param in params:
+            value = param() if param.__code__.co_argcount == 0 else param(symbols)
+            rendered.extend(_flatten_qasm_parameters(value))
+        return rendered
+
+    start = 0
+    for param in params:
+        arg_count = param.__code__.co_argcount
+        args = [symbols[index] for index in pindex[start:start + arg_count]]
+        start += arg_count
+        value = param(*args)
+        rendered.extend(_flatten_qasm_parameters(value))
+    return rendered
 
 
 class QasmConfig:
@@ -92,7 +143,10 @@ class QiskitQasmResult:
         return self.probabilities_fn()
 
     def get_random_reading(self):
-        return onp.random.choice(list(self.counts.keys()))
+        probabilities = self.probabilities
+        readings = list(probabilities)
+        weights = onp.array([probabilities[reading] for reading in readings])
+        return onp.random.choice(readings, p=weights / weights.sum())
 
 
 class QasmBackend:
@@ -178,10 +232,9 @@ class QasmBackend:
                 psi = onp.array(res.states)
                 value = onp.real(psi.conj() @ hamiltonian @ psi)
             elif measure_op.mtype == 'prob':
-                if 'mqubits' in config.metadata:
-                    np_probs = onp.zeros(2 ** (len(config.metadata['mqubits'])))
-                else:
-                    np_probs = onp.zeros(2 ** ir.qnum, dtype=float)
+                measured_qubits = config.mqubits
+                probability_qubits = len(measured_qubits) if measured_qubits is not None else ir.qnum
+                np_probs = onp.zeros(2 ** probability_qubits, dtype=float)
                 for k, v in res.probabilities.items():
                     idx = int(k, 2)
                     np_probs[idx] = v
@@ -221,10 +274,7 @@ class QasmBackend:
 
         qasm_content += 'OPENQASM 2.0;\n'
         qasm_content += 'include "qelib1.inc";\n'
-        edges = defaultdict(list)
-        for u, v in ir.edges:
-            if v not in edges[u]:
-                edges[u].append(v)
+        topological_order = ir.dag.topological_sorting(mode='out')
 
         # Before the qreg are the `qelib1.inc` callee node,
         qreg_dict = {}
@@ -246,7 +296,7 @@ class QasmBackend:
                 creg_dict[int(idx) + int(register[1:])] = (register, int(idx))
             elif v['type'] == NodeType.definition.value:
                 gate = v['name'].lower()
-                if gate not in gate_name:
+                if gate not in qelib_gate_names:
                     qubits = v['qubits']
                     param_num = v['params']
                     qargs = []
@@ -265,9 +315,11 @@ class QasmBackend:
                         qargs.append(f'qb{j}')
                     qasm_content += '{\n'
 
-                    edge = edges[i]
-                    while edge:
-                        idx = edge[0]
+                    definition_nodes = set(ir.dag.subcomponent(i, mode='out'))
+                    definition_nodes.remove(i)
+                    for idx in topological_order:
+                        if idx not in definition_nodes:
+                            continue
                         _v = ir.dag.vs[idx]
                         if _v['type'] != 1 and _v['type'] != 3:
                             raise ValueError
@@ -280,27 +332,12 @@ class QasmBackend:
                         qubits = [qargs[i] for i in _v['qubits']]
                         param = _v['params']
                         if 'pindex' in _v.attributes() and _v['pindex'] is not None:
-                            start = 0
-                            _v_pargs = []
-                            for f in param:
-                                arg_count = f.__code__.co_argcount
-                                if arg_count == 0:
-                                    _v_pargs.append(str(f()))
-                                else:
-                                    _v_pargs.append(list(pargs[i] for i in _v['pindex'][start:start + arg_count]))
-                                    start += arg_count
-                            if _v['expression'] is None:
-                                _v_expression = sum(_v_pargs, [])
-                            else:
-                                expression_list = _v['expression']
-                                _v_expression = []
-                                for i, expression in enumerate(expression_list):
-                                    func = eval(expression)
-                                    _v_expression.append(func(*_v_pargs[i]))
+                            _v_expression = _render_definition_parameters(_v, pargs)
                             qasm_content += f'{_gate}({",".join(_v_expression)}) {",".join(qubits)};\n'
+                        elif param:
+                            qasm_content += f'{_gate}({",".join(map(str, param))}) {",".join(qubits)};\n'
                         else:
                             qasm_content += f'{_gate} {",".join(qubits)};\n'
-                        edge = edges[idx]
                         visited.add(idx)
 
                     qasm_content += '}\n'

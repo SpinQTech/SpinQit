@@ -82,5 +82,10 @@ class CancelRedundantGates():
                 else:
                     non_keep_list.extend(path)
                 i += 1
-        ir.remove_nodes(keep_list, True)
-        ir.remove_nodes(non_keep_list, False)
+        removed = sorted(set(keep_list))
+        ir.remove_nodes(removed, True)
+        remapped_non_keep = [
+            node - sum(previous < node for previous in removed)
+            for node in non_keep_list
+        ]
+        ir.remove_nodes(remapped_non_keep, False)

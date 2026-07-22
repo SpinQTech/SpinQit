@@ -19,6 +19,7 @@ from spinqit.utils.function import to_list
 
 from spinqit.model import *
 from ..decomposer.ZYZdecomposer import decompose_zyz
+from ..decomposer.isometry_decomposer import build_gate_for_isometry
 from ..ir import IntermediateRepresentation as IR
 import numpy as np
 
@@ -55,7 +56,7 @@ def is_primary_gate(gate: Gate):
     if gate in IR.basis_set or gate.label in IR.label_set:
         return True
     elif isinstance(gate, MatrixGate):
-        return True
+        return len(gate.factors) > 0
     elif isinstance(gate, ControlledGate) and (isinstance(gate.base_gate, MatrixGate) or
                 gate.base_gate in IR.basis_set):
         return True
@@ -112,5 +113,10 @@ def decompose_multi_qubit_gate(gate: Gate, qubits: List, params=[]) -> List:
             else:
                 decomposition.extend(decompose_multi_qubit_gate(f[0], sub_qubits, sub_params))
         return decomposition
+
+    if isinstance(gate, MatrixGate):
+        return decompose_multi_qubit_gate(
+            build_gate_for_isometry(gate.get_matrix(*params)), qubits
+        )
 
     raise UnsupportedGateError(gate.label + ' is not supported.')

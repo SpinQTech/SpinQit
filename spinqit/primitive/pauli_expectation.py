@@ -42,7 +42,7 @@ def calculate_pauli_expectation(pauli_string: str, probabilities: Dict) -> float
     f = reduce(np.kron, mat)
     expect_value = 0.0
     for key, value in probabilities.items():
-        idx = int(key[::-1], 2)
+        idx = int(key, 2)
         expect_value += f[idx] * value
     return expect_value
 

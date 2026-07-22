@@ -18,8 +18,8 @@ import numpy as np
 from scipy import sparse
 
 from spinqit import Parameter
-from spinqit.model import Circuit, H, Rx, GateBuilder
-from spinqit.model.Ising_gate import Z_IsingGateBuilder, X_IsingGateBuilder, Y_IsingGateBuilder
+from spinqit.model import Circuit, H, I, Rx, GateBuilder
+from spinqit.model.Ising_gate import Z_IsingGateBuilder
 from spinqit.primitive.pauli_expectation import pauli_decompose
 from spinqit.compiler import compiler
 from spinqit.interface.qlayer import QLayer
@@ -39,17 +39,23 @@ class QAOA(object):
         self.qlayer = None
         self.optimizer = optimizer
 
+        if isinstance(problem, list):
+            self.__qubit_num = len(problem[0][0])
+            problem_terms = problem
+        elif isinstance(problem, sparse.csr_matrix):
+            self.__qubit_num = int(np.log2(problem.get_shape()[0]))
+            problem_terms = pauli_decompose(problem.toarray())
+        else:
+            raise ValueError(
+                f'The `problem` should be `list` or `sparse.csr_matrix`, but got {type(problem)} '
+            )
+
         if problem_ansatz is None:
-            if isinstance(problem, list):
-                self.__qubit_num = len(problem[0][0])
-                problem_ansatz = self._generate_problem_circuit(problem)
-            elif isinstance(problem, sparse.csr_matrix):
-                self.__qubit_num = int(np.log2(problem.get_shape()[0]))
-                problem_ansatz = self._generate_problem_circuit(pauli_decompose(problem.toarray()))
-            else:
-                raise ValueError(
-                    f'The `problem` should be `list` or `sparse.csr_matrix`, but got {type(problem)} '
-                )
+            problem_ansatz = self._generate_problem_circuit(problem_terms)
+        elif problem_ansatz.qubit_num != self.__qubit_num:
+            raise ValueError(
+                'The custom problem ansatz must act on the same number of qubits as the problem.'
+            )
         self.hamiltonian = problem
         self.__depth = depth
         self.params = Parameter(np.random.uniform(0, 2 * np.pi, (self.__depth*2,))) 
@@ -65,19 +71,40 @@ class QAOA(object):
             raise ValueError(
                 'The problem hamiltonian should be given in list in __init__().'
             )
+        for i, (left, _) in enumerate(ham):
+            for right, _ in ham[i + 1:]:
+                anticommutes = sum(
+                    l != 'I' and r != 'I' and l != r
+                    for l, r in zip(left.upper(), right.upper())
+                )
+                if anticommutes % 2:
+                    raise ValueError(
+                        'The default QAOA problem ansatz requires commuting Pauli terms; '
+                        'provide a custom problem_ansatz for noncommuting terms.'
+                    )
         for i in range(len(ham)):
-            if 'Z' in ham[i][0]:
-                qubits = [idx for idx in range(len(ham[i][0])) if ham[i][0][idx] == 'Z']
-                rzz = Z_IsingGateBuilder(len(qubits)).to_gate()
-                builder.append(rzz, qubits, lambda x: x)
-            elif 'X' in ham[i][0]:
-                qubits = [idx for idx in range(len(ham[i][0])) if ham[i][0][idx] == 'X']
-                rxx = X_IsingGateBuilder(len(qubits)).to_gate()
-                builder.append(rxx, qubits, lambda x: x)
-            elif 'Y' in ham[i][0]:
-                qubits = [idx for idx in range(len(ham[i][0])) if ham[i][0][idx] == 'Y']
-                ryy = Y_IsingGateBuilder(len(qubits)).to_gate()
-                builder.append(ryy, qubits, lambda x: x)
+            pauli_string = ham[i][0].upper()
+            coefficient = ham[i][1]
+            rotation_params = lambda x, coefficient=coefficient: [
+                coefficient * value for value in x
+            ]
+            qubits = [idx for idx, pauli in enumerate(pauli_string) if pauli != 'I']
+            for idx, pauli in enumerate(pauli_string):
+                if pauli == 'X':
+                    builder.append(H, [idx])
+                elif pauli == 'Y':
+                    builder.append(Rx, [idx], np.pi / 2)
+                elif pauli not in ('I', 'Z'):
+                    raise ValueError(f'Invalid Pauli string `{pauli_string}`.')
+            if qubits:
+                builder.append(Z_IsingGateBuilder(len(qubits)).to_gate(), qubits, rotation_params)
+            for idx, pauli in enumerate(pauli_string):
+                if pauli == 'X':
+                    builder.append(H, [idx])
+                elif pauli == 'Y':
+                    builder.append(Rx, [idx], -np.pi / 2)
+        if builder.size() == 0:
+            builder.append(I, [0])
         return builder.to_gate()
 
     def _generate_mixer_circuit(self) -> Gate:
