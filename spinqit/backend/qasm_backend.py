@@ -178,10 +178,9 @@ class QasmBackend:
                 psi = onp.array(res.states)
                 value = onp.real(psi.conj() @ hamiltonian @ psi)
             elif measure_op.mtype == 'prob':
-                if 'mqubits' in config.metadata:
-                    np_probs = onp.zeros(2 ** (len(config.metadata['mqubits'])))
-                else:
-                    np_probs = onp.zeros(2 ** ir.qnum, dtype=float)
+                measured_qubits = config.mqubits
+                probability_qubits = len(measured_qubits) if measured_qubits is not None else ir.qnum
+                np_probs = onp.zeros(2 ** probability_qubits, dtype=float)
                 for k, v in res.probabilities.items():
                     idx = int(k, 2)
                     np_probs[idx] = v
