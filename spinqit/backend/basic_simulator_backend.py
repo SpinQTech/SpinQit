@@ -106,12 +106,10 @@ class BasicSimulatorBackend(BaseBackend):
     def __qubits_and_clbits(v):
         edges = v.in_edges()
         edges.sort(key=lambda k: k.index)
-        qubits = []
+        qubits = list(v['qubits'])
         clbits = []
         for e in edges:
-            if 'qubit' in e.attributes() and e['qubit'] is not None:
-                qubits.append(e['qubit'])
-            elif 'clbit' in e.attributes() and e['clbit'] is not None:
+            if 'clbit' in e.attributes() and e['clbit'] is not None:
                 clbits.append(e['clbit'])
         return qubits, clbits
 
