@@ -83,7 +83,15 @@ class BasicSimulatorBackend(BaseBackend):
                 elif v['name'] == CX.label:
                     v['name'] = 'CNOT'
                 elif v['name'] == CY.label:
-                    v['name'] = 'YCON'
+                    qubits, clbits = self.__qubits_and_clbits(v)
+                    subgates = [
+                        Instruction(Sd, [qubits[1]], clbits),
+                        Instruction(CX, qubits, clbits),
+                        Instruction(S, [qubits[1]], clbits),
+                    ]
+                    ir.substitute_nodes([v.index], subgates, v['type'])
+                    ir.remove_nodes([v.index], False)
+                    i -= 1
                 elif v['name'] == CZ.label:
                     v['name'] = 'ZCON'
                 elif v['name'] == CCX.label:
