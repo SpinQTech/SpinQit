@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import functools
-from collections import defaultdict
 from copy import deepcopy
 
 import numpy as onp
@@ -223,10 +222,7 @@ class QasmBackend:
 
         qasm_content += 'OPENQASM 2.0;\n'
         qasm_content += 'include "qelib1.inc";\n'
-        edges = defaultdict(list)
-        for u, v in ir.edges:
-            if v not in edges[u]:
-                edges[u].append(v)
+        topological_order = ir.dag.topological_sorting(mode='out')
 
         # Before the qreg are the `qelib1.inc` callee node,
         qreg_dict = {}
@@ -267,9 +263,11 @@ class QasmBackend:
                         qargs.append(f'qb{j}')
                     qasm_content += '{\n'
 
-                    edge = edges[i]
-                    while edge:
-                        idx = edge[0]
+                    definition_nodes = set(ir.dag.subcomponent(i, mode='out'))
+                    definition_nodes.remove(i)
+                    for idx in topological_order:
+                        if idx not in definition_nodes:
+                            continue
                         _v = ir.dag.vs[idx]
                         if _v['type'] != 1 and _v['type'] != 3:
                             raise ValueError
@@ -302,7 +300,6 @@ class QasmBackend:
                             qasm_content += f'{_gate}({",".join(_v_expression)}) {",".join(qubits)};\n'
                         else:
                             qasm_content += f'{_gate} {",".join(qubits)};\n'
-                        edge = edges[idx]
                         visited.add(idx)
 
                     qasm_content += '}\n'
