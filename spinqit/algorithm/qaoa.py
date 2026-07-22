@@ -39,17 +39,23 @@ class QAOA(object):
         self.qlayer = None
         self.optimizer = optimizer
 
+        if isinstance(problem, list):
+            self.__qubit_num = len(problem[0][0])
+            problem_terms = problem
+        elif isinstance(problem, sparse.csr_matrix):
+            self.__qubit_num = int(np.log2(problem.get_shape()[0]))
+            problem_terms = pauli_decompose(problem.toarray())
+        else:
+            raise ValueError(
+                f'The `problem` should be `list` or `sparse.csr_matrix`, but got {type(problem)} '
+            )
+
         if problem_ansatz is None:
-            if isinstance(problem, list):
-                self.__qubit_num = len(problem[0][0])
-                problem_ansatz = self._generate_problem_circuit(problem)
-            elif isinstance(problem, sparse.csr_matrix):
-                self.__qubit_num = int(np.log2(problem.get_shape()[0]))
-                problem_ansatz = self._generate_problem_circuit(pauli_decompose(problem.toarray()))
-            else:
-                raise ValueError(
-                    f'The `problem` should be `list` or `sparse.csr_matrix`, but got {type(problem)} '
-                )
+            problem_ansatz = self._generate_problem_circuit(problem_terms)
+        elif problem_ansatz.qubit_num != self.__qubit_num:
+            raise ValueError(
+                'The custom problem ansatz must act on the same number of qubits as the problem.'
+            )
         self.hamiltonian = problem
         self.__depth = depth
         self.params = Parameter(np.random.uniform(0, 2 * np.pi, (self.__depth*2,))) 
