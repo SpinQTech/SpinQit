@@ -44,6 +44,13 @@ gate_name = {
     CP.label.lower(): 'cp'
 }
 
+qelib_gate_names = {
+    'u3', 'u2', 'u1', 'u0', 'u', 'p', 'cx', 'id', 'x', 'y', 'z', 'h',
+    's', 'sdg', 't', 'tdg', 'rx', 'ry', 'rz', 'sx', 'sxdg', 'cz', 'cy',
+    'swap', 'ch', 'ccx', 'cswap', 'cry', 'crz', 'crx', 'cu1', 'cp', 'cu3',
+    'csx', 'cu', 'rxx', 'rzz', 'rccx', 'rc3x', 'c3x', 'c3sqrtx', 'c4x',
+}.union(gate_name)
+
 
 def _flatten_qasm_parameters(value):
     if isinstance(value, (list, tuple, onp.ndarray)):
@@ -289,7 +296,7 @@ class QasmBackend:
                 creg_dict[int(idx) + int(register[1:])] = (register, int(idx))
             elif v['type'] == NodeType.definition.value:
                 gate = v['name'].lower()
-                if gate not in gate_name:
+                if gate not in qelib_gate_names:
                     qubits = v['qubits']
                     param_num = v['params']
                     qargs = []
