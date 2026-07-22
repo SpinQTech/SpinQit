@@ -143,12 +143,18 @@ class NativeCompiler(Compiler):
 
         for inst in circ.instructions:
             gate = inst.gate
+            has_lazy_params = any(
+                isinstance(param, LazyParameter)
+                for param in _flatten(inst.params)
+            )
+            lower_symbolic_controlled = (
+                isinstance(gate, ControlledGate)
+                and len(gate.factors) > 0
+                and has_lazy_params
+            )
             lower_controlled = (
                 isinstance(gate, ControlledGate)
-                and not any(
-                    isinstance(param, LazyParameter)
-                    for param in _flatten(inst.params)
-                )
+                and not has_lazy_params
                 and (
                     (isinstance(gate.base_gate, MatrixGate)
                      and len(gate.factors) == 0)
@@ -156,7 +162,16 @@ class NativeCompiler(Compiler):
                         and gate.base_gate.qubit_num == 1)
                 )
             )
-            if lower_controlled:
+            if lower_symbolic_controlled:
+                # Parameter-shift rules apply to the native rotations in the
+                # decomposition, not generally to the controlled gate as a
+                # whole because its generator can have three eigenvalues.
+                ilist = decompose_multi_qubit_gate(
+                    gate, inst.qubits, inst.params
+                )
+                for i in ilist:
+                    self.handle_primary_gate(ir, i, inst.condition)
+            elif lower_controlled:
                 # A raw controlled matrix becomes an IR ``unitary`` node, which
                 # execution and serialization backends do not implement. Nested
                 # control also makes a subgate's global phase observable. Lower

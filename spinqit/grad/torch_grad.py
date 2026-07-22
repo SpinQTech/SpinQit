@@ -80,7 +80,7 @@ def parameter_shift(ir, params, config, backend, measure_op):
                     func = v['func']
                     origin_param = [x for x in v['params']]
                     for i in range(len(origin_param)):
-                        if callable(func[i]) and requires_grad(origin_param[i]):
+                        if callable(func[i]):
                             v['params'][i] = origin_param[i] + torch.pi / (4 * r)
                             value1, _ = backend.evaluate(ir, config, measure_op)
                             v['params'][i] = origin_param[i] - torch.pi / (4 * r)
