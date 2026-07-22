@@ -196,7 +196,7 @@ class TorchResult:
 
     @staticmethod
     def _process_prob(config, np_states):
-        qubit_num = int(onp.log2(np_states.shape[-1:]))
+        qubit_num = int(onp.log2(np_states.shape[-1]))
         probabilities = torch.abs(np_states) ** 2
         higher_dim = list(probabilities.shape[:-1])
         if config.mqubits is not None:
