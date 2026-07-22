@@ -238,9 +238,10 @@ class TorchSimulator:
         else:
             state = torch.as_tensor(states, device=device, dtype=dtype)
 
-        if not torch.allclose((state ** 2).sum().real, torch.tensor(1., dtype=state.real.dtype)):
+        norm = torch.sum(torch.abs(state) ** 2, dim=-1)
+        if not torch.allclose(norm, torch.ones_like(norm)):
             raise ValueError(
-                f'The `StateVector` is not a quantum state, expected norm(state) to be 1, but got {(state ** 2).sum().real}'
+                f'The `StateVector` is not a quantum state, expected norm(state) to be 1, but got {norm}'
             )
 
         if state.size(-1) != 2 ** qubits_num:
