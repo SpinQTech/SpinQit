@@ -396,10 +396,7 @@ def torch_pauli_expectation(pauli_string, probabilities):
             raise ValueError('The input string is not a Pauli string')
 
     f = functools.reduce(torch.kron, mat)
-    if len(probabilities.shape) < 2:
-        probabilities = probabilities.unsqueeze(0)
-    expect_val = (probabilities * f).sum(dim=1)
-    return expect_val[0]
+    return (probabilities * f).sum(dim=-1)
 
 
 class TorchSimulatorBackend(BaseBackend):
