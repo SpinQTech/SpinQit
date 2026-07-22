@@ -70,11 +70,10 @@ class ControlledGate(Gate):
         m = self.subgate.get_matrix(*params)
         if m is None:
             return None
-        m0 = np.zeros(len(m))
-        m1 = np.eye(len(m))
+        m0 = np.zeros_like(m)
+        m1 = np.eye(len(m), dtype=m.dtype)
         m10 = np.concatenate([m1, m0], axis=1)
         m = np.concatenate([m0, m], axis=1)
         m = np.concatenate([m10, m], axis=0)
 
         return m
-
