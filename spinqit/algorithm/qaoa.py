@@ -71,6 +71,17 @@ class QAOA(object):
             raise ValueError(
                 'The problem hamiltonian should be given in list in __init__().'
             )
+        for i, (left, _) in enumerate(ham):
+            for right, _ in ham[i + 1:]:
+                anticommutes = sum(
+                    l != 'I' and r != 'I' and l != r
+                    for l, r in zip(left.upper(), right.upper())
+                )
+                if anticommutes % 2:
+                    raise ValueError(
+                        'The default QAOA problem ansatz requires commuting Pauli terms; '
+                        'provide a custom problem_ansatz for noncommuting terms.'
+                    )
         for i in range(len(ham)):
             pauli_string = ham[i][0].upper()
             coefficient = ham[i][1]
