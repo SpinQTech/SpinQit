@@ -17,7 +17,6 @@ from .cancel_redundant_gates import CancelRedundantGates
 from .collapse_single_qubit_gates import CollapseSingleQubitGates
 from .collapse_two_qubit_gates import CollapseTwoQubitGates
 from .quantum_basis_state_optimization import ConstantsStateOptimization
-from .quantum_pure_state_optimization import PureStateOnU
 
 class PassManager(object):
     def __init__(self, level: int):
@@ -32,7 +31,6 @@ class PassManager(object):
         elif level == 3:
             self.passes.append(CancelRedundantGates())
             self.passes.append(ConstantsStateOptimization())
-            self.passes.append(PureStateOnU())
             self.passes.append(CollapseSingleQubitGates())
             self.passes.append(CollapseTwoQubitGates())
     
