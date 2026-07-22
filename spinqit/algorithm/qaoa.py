@@ -66,18 +66,22 @@ class QAOA(object):
                 'The problem hamiltonian should be given in list in __init__().'
             )
         for i in range(len(ham)):
+            coefficient = ham[i][1]
+            rotation_params = lambda x, coefficient=coefficient: [
+                coefficient * value for value in x
+            ]
             if 'Z' in ham[i][0]:
                 qubits = [idx for idx in range(len(ham[i][0])) if ham[i][0][idx] == 'Z']
                 rzz = Z_IsingGateBuilder(len(qubits)).to_gate()
-                builder.append(rzz, qubits, lambda x: x)
+                builder.append(rzz, qubits, rotation_params)
             elif 'X' in ham[i][0]:
                 qubits = [idx for idx in range(len(ham[i][0])) if ham[i][0][idx] == 'X']
                 rxx = X_IsingGateBuilder(len(qubits)).to_gate()
-                builder.append(rxx, qubits, lambda x: x)
+                builder.append(rxx, qubits, rotation_params)
             elif 'Y' in ham[i][0]:
                 qubits = [idx for idx in range(len(ham[i][0])) if ham[i][0][idx] == 'Y']
                 ryy = Y_IsingGateBuilder(len(qubits)).to_gate()
-                builder.append(ryy, qubits, lambda x: x)
+                builder.append(ryy, qubits, rotation_params)
         return builder.to_gate()
 
     def _generate_mixer_circuit(self) -> Gate:
