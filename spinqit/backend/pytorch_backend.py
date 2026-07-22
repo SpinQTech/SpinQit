@@ -68,6 +68,33 @@ rotations = {
 }
 
 
+def _resolve_callee_params(functions, indexes, params):
+    if not functions:
+        return []
+
+    result = []
+    if indexes == [-1]:
+        for function in functions:
+            if not callable(function):
+                result.append(function)
+            elif function.__code__.co_argcount == 0:
+                result.append(function())
+            else:
+                result.append(function(params))
+        return result
+
+    start = 0
+    for function in functions:
+        if not callable(function):
+            result.append(function)
+            continue
+        arg_count = function.__code__.co_argcount
+        args = [params[index] for index in indexes[start:start + arg_count]]
+        start += arg_count
+        result.append(function(*args))
+    return result
+
+
 class TorchSimulatorConfig:
     def __init__(self):
         self.mqubits = None
@@ -283,17 +310,9 @@ class TorchSimulator:
                 local = [qubits[i] for i in node['qubits']]
                 plambda = None if 'params' not in node.attributes() else node['params']
                 if 'pindex' in node.attributes() and node['pindex'] is not None:
-                    try:
-                        p = [
-                            f(*[params[idx] for idx in node['pindex']]) if callable(f) else f
-                            for f in plambda
-                        ]
-                    except Exception:
-                        p = [
-                            f([params[idx] for idx in node['pindex']]) if callable(f) else f
-                            for f in plambda
-                        ]
-                    callee_params = [] if not plambda else p
+                    callee_params = _resolve_callee_params(
+                        plambda, node['pindex'], params
+                    )
                 else:
                     callee_params = [] if not plambda else [
                         f(params) if callable(f) else f for f in plambda
