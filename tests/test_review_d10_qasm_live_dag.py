@@ -1,3 +1,7 @@
+import contextlib
+import io
+import os
+import tempfile
 import unittest
 
 import numpy as np
@@ -41,6 +45,16 @@ class QasmLiveDagRegressionTests(unittest.TestCase):
                 body = qasm.split('{\n', 1)[1].split('}\n', 1)[0].splitlines()
                 self.assertEqual(len(body), callee_count)
                 self.assertNotIn('custom_ch qb0,qb1;', body)
+
+                with tempfile.NamedTemporaryFile('w', suffix='.qasm', delete=False) as qasm_file:
+                    qasm_file.write(qasm)
+                    path = qasm_file.name
+                try:
+                    with contextlib.redirect_stderr(io.StringIO()):
+                        round_trip_ir = get_compiler('qasm').compile(path, 0)
+                finally:
+                    os.unlink(path)
+                self.assertIsNotNone(round_trip_ir)
 
 
 if __name__ == '__main__':

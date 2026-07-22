@@ -334,6 +334,8 @@ class QasmBackend:
                         if 'pindex' in _v.attributes() and _v['pindex'] is not None:
                             _v_expression = _render_definition_parameters(_v, pargs)
                             qasm_content += f'{_gate}({",".join(_v_expression)}) {",".join(qubits)};\n'
+                        elif param:
+                            qasm_content += f'{_gate}({",".join(map(str, param))}) {",".join(qubits)};\n'
                         else:
                             qasm_content += f'{_gate} {",".join(qubits)};\n'
                         visited.add(idx)
