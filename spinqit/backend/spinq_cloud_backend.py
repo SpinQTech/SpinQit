@@ -365,7 +365,15 @@ class SpinQCloudBackend:
         if res:
             res_entity = json.loads(res.content)
             task_dict = res_entity["task"]
-            task = Task(task_dict["tname"], task_dict["platformCode"], None, task_dict["calcMatrix"], task_dict["shots"], description=task_dict["description"] )
+            task = Task(
+                name=task_dict["tname"],
+                platform_code=task_dict["platformCode"],
+                bitNum=task_dict["bitNum"],
+                clbitnum=task_dict["clbitNum"],
+                calc_matrix=task_dict["calcMatrix"],
+                shots=task_dict["shots"],
+                description=task_dict["description"],
+            )
             task.set_task_code(task_dict["tcode"])
             task.set_status(task_dict["tstatus"])
             if task_dict["createdTime"] is not None:
