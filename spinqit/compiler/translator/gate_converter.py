@@ -55,7 +55,7 @@ def is_primary_gate(gate: Gate):
     if gate in IR.basis_set or gate.label in IR.label_set:
         return True
     elif isinstance(gate, MatrixGate):
-        return True
+        return gate.qubit_num != 1 or len(gate.factors) > 0
     elif isinstance(gate, ControlledGate) and (isinstance(gate.base_gate, MatrixGate) or
                 gate.base_gate in IR.basis_set):
         return True
