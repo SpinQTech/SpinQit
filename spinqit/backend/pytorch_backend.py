@@ -284,12 +284,20 @@ class TorchSimulator:
                 plambda = None if 'params' not in node.attributes() else node['params']
                 if 'pindex' in node.attributes() and node['pindex'] is not None:
                     try:
-                        p = [f(*[params[idx] for idx in node['pindex']]) for f in plambda]
+                        p = [
+                            f(*[params[idx] for idx in node['pindex']]) if callable(f) else f
+                            for f in plambda
+                        ]
                     except Exception:
-                        p = [f([params[idx] for idx in node['pindex']]) for f in plambda]
+                        p = [
+                            f([params[idx] for idx in node['pindex']]) if callable(f) else f
+                            for f in plambda
+                        ]
                     callee_params = [] if not plambda else p
                 else:
-                    callee_params = [] if not plambda else [f(params) for f in plambda]
+                    callee_params = [] if not plambda else [
+                        f(params) if callable(f) else f for f in plambda
+                    ]
                 if node['type'] == 3:
                     state = self._op_node(node['name'], callee_params, state, local, qubits_num)
                 elif node['type'] == 1:
