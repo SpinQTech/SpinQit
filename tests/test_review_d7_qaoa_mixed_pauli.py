@@ -3,10 +3,19 @@ import unittest
 import numpy as np
 
 from spinqit import BasicSimulatorConfig, Circuit, X, Y, Z, get_basic_simulator, get_compiler
+from spinqit.algorithm.optimizer import GradientDescent
 from spinqit.algorithm.qaoa import QAOA
 
 
 class QaoaMixedPauliRegressionTest(unittest.TestCase):
+    def test_identity_only_problem_builds(self):
+        qaoa = QAOA(
+            [('II', 3.0)],
+            GradientDescent(maxiter=1, verbose=False),
+            depth=1,
+        )
+        self.assertEqual(qaoa.circuit.qnum, 2)
+
     def test_mixed_pauli_problem_terms_act_on_every_nonidentity_qubit(self):
         angle = 0.6
         matrices = {'X': X.get_matrix(), 'Y': Y.get_matrix(), 'Z': Z.get_matrix()}

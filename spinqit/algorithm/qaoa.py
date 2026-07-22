@@ -18,7 +18,7 @@ import numpy as np
 from scipy import sparse
 
 from spinqit import Parameter
-from spinqit.model import Circuit, H, Rx, GateBuilder
+from spinqit.model import Circuit, H, I, Rx, GateBuilder
 from spinqit.model.Ising_gate import Z_IsingGateBuilder
 from spinqit.primitive.pauli_expectation import pauli_decompose
 from spinqit.compiler import compiler
@@ -86,6 +86,8 @@ class QAOA(object):
                     builder.append(H, [idx])
                 elif pauli == 'Y':
                     builder.append(Rx, [idx], -np.pi / 2)
+        if builder.size() == 0:
+            builder.append(I, [0])
         return builder.to_gate()
 
     def _generate_mixer_circuit(self) -> Gate:
