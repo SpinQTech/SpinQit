@@ -136,7 +136,20 @@ class NativeCompiler(Compiler):
 
         for inst in circ.instructions:
             gate = inst.gate
-            if is_primary_gate(gate):
+            if (isinstance(gate, ControlledGate)
+                    and isinstance(gate.base_gate, MatrixGate)
+                    and len(gate.factors) == 0):
+                # A raw controlled matrix becomes an IR ``unitary`` node, which
+                # execution and serialization backends do not implement.  Lower
+                # it to the native basis before constructing the IR instead.
+                from spinqit.primitive.multi_controlled_gate_builder import MultiControlledGateBuilder
+                lowered_gate = MultiControlledGateBuilder(
+                    gate.control_bits, gate.base_gate, inst.params
+                ).to_gate()
+                ilist = decompose_multi_qubit_gate(lowered_gate, inst.qubits)
+                for i in ilist:
+                    self.handle_primary_gate(ir, i, inst.condition)
+            elif is_primary_gate(gate):
                 self.handle_primary_gate(ir, inst, inst.condition)
             else:
                 if gate.qubit_num == 1:
