@@ -297,6 +297,8 @@ class SpinQCloudBackend:
 
     def submit_task(self, ir: IntermediateRepresentation, config: SpinQCloudConfig, calc_matrix: bool = False, process_now: bool = True, debug: bool = False):
         # get params from config
+        calc_matrix = config.metadata.get('calc_matrix', calc_matrix)
+        process_now = config.metadata.get('process_now', process_now)
         platform_code = config.metadata['platform']
         log_to_phy = None
         if 'keep_layout' in config.metadata and config.metadata['keep_layout'] is not None:
