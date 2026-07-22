@@ -462,7 +462,9 @@ class TorchSimulatorBackend(BaseBackend):
                         f'Expected `np.ndarray, sparse.csr_matrix, list`, but got `{type(hamiltonian)}`'
                     )
                 if isinstance(hamiltonian, onp.ndarray):
-                    hamiltonian = torch.as_tensor(hamiltonian, dtype, device)
+                    hamiltonian = torch.as_tensor(
+                        hamiltonian, dtype=dtype, device=device
+                    )
                 elif isinstance(hamiltonian, sparse.csr_matrix):
                     hamiltonian = self._scipy_sparse_mat_to_torch_sparse_tensor(hamiltonian)
                 else:
