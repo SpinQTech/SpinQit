@@ -5,10 +5,10 @@ matplotlib>=3.5
 numpy<2.0.0
 noisyopt==0.2.2
 psutil==5.9.1
-pybind11==2.9.2
+pybind11>=2.11,<4
 pycryptodome==3.11.0
 python-constraint==1.4.0
-python-igraph==0.9.10
+igraph>=0.10.8,<2
 autoray==0.6.1
 sympy
 requests

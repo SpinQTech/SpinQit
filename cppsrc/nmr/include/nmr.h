@@ -44,10 +44,7 @@ using namespace std;
 
 #include "SpinQuasar.h"
 
-extern "C" {
-#include "util/graph_attributes.h"
-#include "igraph/igraph.h"
-}
+#include "util/graph_data.h"
 
 inline string convert_to_binary(size_t i, size_t n)
 {
@@ -62,7 +59,7 @@ class Nmr
 {
 public:
     Nmr() {}
-    Result execute(py::capsule graph, py::dict config)
+    Result execute(py::dict graph_data, py::dict config)
     {
         Result re;
         string ip = "127.0.0.1";
@@ -113,7 +110,8 @@ public:
             verbose = pcobj.cast<bool>();
         }
         
-        igraph_t *gptr = (igraph_t *)graph.get_pointer();
+        NativeGraph graph(graph_data);
+        igraph_t *gptr = graph.get();
         vector<Operation> gate_map; 
         int qnum = translate(gptr, gate_map);
 

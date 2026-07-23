@@ -19,7 +19,7 @@ code_to_pauli = {'00':'I', '01':'Z', '10':'X', '11':'Y'}
 
 def to_binary_repr(pauli_str: str) -> np.ndarray:
     qnum = len(pauli_str)
-    repr = np.zeros(2*qnum, dtype=np.int)
+    repr = np.zeros(2*qnum, dtype=int)
     for idx in range(qnum):
         op = pauli_str[idx]
         if op == 'X':
@@ -210,4 +210,3 @@ def taper_off_qubits(hamiltonian: List, generators: List, sector: List) -> List:
 
     tapered = [(o, c) for o, c in zip(ops, coeffs)]
     return combine_terms(tapered)
-    

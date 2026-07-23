@@ -13,7 +13,7 @@ If you prefer to install Anaconda, please make sure to download the correct vers
 
 Download and install CMake https://cmake.org/download/
 
-CMake version must > 3.16.0 to compile igraph.
+CMake 3.18 or newer is required to compile the native extension.
 
 Remember to add CMake to your path.
 
@@ -99,12 +99,11 @@ cppsrc/lib/
 └── simulator-core.lib                 # simulator-core library for Windows
 ```
 
-Then install or pack the package
+Then install or build a wheel. These commands use the active Python interpreter and install the build-only dependencies declared in `pyproject.toml` in an isolated environment.
 
 ```
-python setup.py install  # install at local
-python setup.py bdist_wheel  # pack to a binary wheel, must first pip install wheel
-python setup.py sdist  # pack to a tar.gz of src
+python -m pip install .
+python -m pip wheel --no-deps .
 ```
 
 ### Issues
@@ -120,40 +119,7 @@ Call Stack (most recent call first):
   /Users/spinq/Desktop/CMake.app/Contents/share/cmake-3.22/Modules/FindPackageHandleStandardArgs.cmake:594 (_FPHSA_FAILURE_MESSAGE)
 ```
 
-To fix this, you need to add `PYTHON_INCLUDE_DIR` and `PYTHON_LIBRARY` at line 56 of `setup.py`
-
-Windows Sample
-
-```python
-cmake_args = [
-    '-DPYTHON_INCLUDE_DIR=D:/tools/miniconda3/envs/python38/include',
-    '-DPYTHON_LIBRARY=D:/tools/miniconda3/envs/python38/libs/python38.lib',
-    '-DCMAKE_LIBRARY_OUTPUT_DIRECTORY=' + extdir,
-    '-DPYTHON_EXECUTABLE=' + sys.executable
-]
-```
-
-Mac Sample
-
-```python
-cmake_args = [
-    '-DPYTHON_INCLUDE_DIR=/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.8/include/python3.8',
-    '-DPYTHON_LIBRARY=/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.8/lib/libpython3.8.dylib',
-    '-DCMAKE_LIBRARY_OUTPUT_DIRECTORY=' + extdir,
-    '-DPYTHON_EXECUTABLE=' + sys.executable
-]
-```
-
-Linux Sample
-
-```python
-cmake_args = [
-    '-DPYTHON_INCLUDE_DIR=/home/hx/.conda/envs/python38/include/python3.8',
-    '-DPYTHON_LIBRARY=/home/hx/.conda/envs/python38/lib/libpython3.8.so',
-    '-DCMAKE_LIBRARY_OUTPUT_DIRECTORY=' + extdir,
-    '-DPYTHON_EXECUTABLE=' + sys.executable
-]
-```
+Use `python -m pip install .` from the intended environment. The build passes that interpreter and the isolated `pybind11` CMake directory explicitly; manual edits to `setup.py` should not be necessary.
 
 #### 2
 

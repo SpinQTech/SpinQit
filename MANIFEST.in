@@ -1,0 +1,5 @@
+include CMakeLists.txt
+graft cppsrc
+graft spinqit/backend/wrapper
+graft tests
+global-exclude __pycache__ *.py[cod] .DS_Store

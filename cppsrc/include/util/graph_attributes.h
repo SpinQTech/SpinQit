@@ -22,8 +22,8 @@
 #include <igraph/igraph_error.h>
 
 #define PyBaseString_Check(o) (PyUnicode_Check(o) || PyBytes_Check(o))
-#define ATTR_STRUCT(graph) ((igraphmodule_i_attribute_struct*)((graph)->attr))
-#define ATTR_STRUCT_DICT(graph) ((igraphmodule_i_attribute_struct*)((graph)->attr))->attrs
+#define ATTR_STRUCT(graph) ((spinqit_attribute_struct*)((graph)->attr))
+#define ATTR_STRUCT_DICT(graph) ((spinqit_attribute_struct*)((graph)->attr))->attrs
 
 #define ATTRHASH_IDX_GRAPH  0
 #define ATTRHASH_IDX_VERTEX 1
@@ -32,7 +32,7 @@
 typedef struct {
     PyObject* attrs[3];
     PyObject* vertex_name_index;
-} igraphmodule_i_attribute_struct;
+} spinqit_attribute_struct;
 
 /*
  * Copy unicode bytes to a string

@@ -20,7 +20,7 @@ import sys
 import platform
 import subprocess
 
-from distutils.version import LooseVersion
+import pybind11
 from setuptools import setup, find_packages, Extension
 from setuptools.command.build_ext import build_ext
 from glob import glob
@@ -42,10 +42,10 @@ class CMakeBuild(build_ext):
                 ", ".join(e.name for e in self.extensions))
 
         if platform.system() == "Windows":
-            cmake_version = LooseVersion(re.search(r'version\s*([\d.]+)',
-                                         out.decode()).group(1))
-            if cmake_version < '3.1.0':
-                raise RuntimeError("CMake >= 3.1.0 is required on Windows")
+            cmake_version = tuple(int(part) for part in re.search(
+                r'version\s*([\d.]+)', out.decode()).group(1).split('.'))
+            if cmake_version < (3, 18, 0):
+                raise RuntimeError("CMake >= 3.18.0 is required on Windows")
 
         for ext in self.extensions:
             self.build_extension(ext)
@@ -55,7 +55,8 @@ class CMakeBuild(build_ext):
             os.path.dirname(self.get_ext_fullpath(ext.name)))
 
         cmake_args = ['-DCMAKE_LIBRARY_OUTPUT_DIRECTORY=' + extdir,
-                      '-DPYTHON_EXECUTABLE=' + sys.executable]
+                      '-DPython_EXECUTABLE=' + sys.executable,
+                      '-Dpybind11_DIR=' + pybind11.get_cmake_dir()]
 
         cfg = 'Debug' if self.debug else 'Release'
         build_args = ['--config', cfg]
@@ -84,7 +85,7 @@ class CMakeBuild(build_ext):
 
 date_files_list = []
 final_place = ''
-if sys.argv[1] in ['install', 'bdist_egg']:
+if len(sys.argv) > 1 and sys.argv[1] in ['install', 'bdist_egg']:
     final_place = 'spinqit'
 
 if platform.system() == 'Windows':
@@ -113,13 +114,18 @@ setup(
     classifiers=[
         'Development Status :: 4 - Beta',
         "Programming Language :: Python :: 3",
+        "Programming Language :: Python :: 3.8",
+        "Programming Language :: Python :: 3.9",
+        "Programming Language :: Python :: 3.10",
+        "Programming Language :: Python :: 3.11",
+        "Programming Language :: Python :: 3.12",
         "Operating System :: Microsoft :: Windows",
         "Operating System :: POSIX :: Linux",
         "Operating System :: MacOS"
     ],
     ext_modules=[CMakeExtension('spinqit.spinq_backends')],
-    install_requires=['numpy<2.0.0', 'scipy', 'scikit-learn', 'torch', 'autograd==1.5.0', 'psutil', 'retworkx', 'python-igraph==0.9.10', 'pybind11', 'antlr4-python3-runtime==4.9.2', 'python-constraint', 'requests', 'matplotlib>=3.5', 'pycryptodome==3.11.0', 'autoray==0.6.1', 'noisyopt==0.2.2', 'sympy'],
-    python_requires='>=3.8',
+    install_requires=['numpy<2.0.0', 'scipy', 'scikit-learn', 'torch', 'autograd==1.5.0', 'psutil', 'retworkx', 'igraph>=0.10.8,<2', 'antlr4-python3-runtime==4.9.2', 'python-constraint', 'requests', 'matplotlib>=3.5', 'pycryptodome==3.11.0', 'autoray==0.6.1', 'noisyopt==0.2.2', 'sympy'],
+    python_requires='>=3.8,<3.13',
     cmdclass=dict(build_ext=CMakeBuild),
     package_data={'spinqit': package_data_files},
     data_files=date_files_list,

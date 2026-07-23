@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.12)
+cmake_minimum_required(VERSION 3.18)
 
 set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -8,28 +8,6 @@ if (CMAKE_HOST_APPLE)
 endif ()
 
 project(spinq-simulator VERSION 0.0.1)
-
-find_package(PythonLibs REQUIRED)
-
-message(STATUS "PYTHON include dirs: ${PYTHON_INCLUDE_DIRS}")
-
-set(_find_pybind_includes_command "
-import sys
-import pybind11
-sys.stdout.write(pybind11.get_include())
-")
-
-execute_process(COMMAND "${PYTHON_EXECUTABLE}" -c "${_find_pybind_includes_command}"
-                OUTPUT_VARIABLE _pybind_output
-                RESULT_VARIABLE _pybind_result)
-
-if(_pybind_result EQUAL "0")
-    message(STATUS "PYCOMM RAW: ${_pybind_output}")
-    set(PYBIND_INCLUDE_DIRS "${_pybind_output}")
-else()
-   message(WARNING "(NAIVE) CHECK COULD NOT FIND PYBIND!")
-   set(PYBIND_INCLUDE_DIRS ${PYTHON_INCLUDE_DIRS})
-endif()
 
 # Source files
 file(GLOB_RECURSE SOURCE_FILES CONFIGURE_DEPENDS "*.cpp" "*.h")
@@ -79,8 +57,7 @@ add_library(spinq-simulator STATIC ${SOURCE_FILES})
 target_include_directories(spinq-simulator PUBLIC ${CMAKE_CURRENT_LIST_DIR}/basic_simulator/include
                                                   ${CMAKE_CURRENT_LIST_DIR}/nmr/include
                                                   ${CMAKE_CURRENT_LIST_DIR}/include
-                                                  ${PYTHON_INCLUDE_DIRS}
-                                                  ${PYBIND_INCLUDE_DIRS})
+                                                  ${Python_INCLUDE_DIRS})
 
 set_target_properties(spinq-simulator PROPERTIES 
                      BUILD_WITH_INSTALL_RPATH TRUE 
@@ -92,6 +69,6 @@ target_link_libraries(spinq-simulator PUBLIC
                         ${CORE_LIB} 
                         ${IGRAPH_LIB}                      
                         ${QUASAR_LIB}
+                        pybind11::headers
                         Threads::Threads
                         )
-
