@@ -19,7 +19,7 @@ import numpy as onp
 from autoray import numpy as ar
 from scipy import sparse
 
-from .backend_util import get_graph_capsule, _add_pauli_gate
+from .backend_util import get_graph_data, _add_pauli_gate
 from spinqit.compiler import IntermediateRepresentation, NodeType
 from spinqit.model import Instruction
 from spinqit.model import I, H, X, Y, Z, Rx, Ry, Rz, T, Td, S, Sd, P, CX, CY, CZ, SWAP, CCX, U
@@ -133,7 +133,7 @@ class BasicSimulatorBackend(BaseBackend):
 
     def execute(self, ir: IntermediateRepresentation, config):
         self.assemble(ir)
-        return self.simulator.execute(get_graph_capsule(ir.dag), config.metadata)
+        return self.simulator.execute(get_graph_data(ir.dag), config.metadata)
 
     def get_value_and_grad_fn(self, ir, config, measure_op=None, place_holder=None, grad_method=None):
         def value_and_grad_fn(params):

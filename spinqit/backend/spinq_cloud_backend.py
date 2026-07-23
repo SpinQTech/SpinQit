@@ -36,7 +36,7 @@ from spinqit.model import Ry, Rz, P, T, Td, S, Sd, CP, SWAP, CCX, U, MEASURE, St
 from spinqit.model import Instruction
 from spinqit.compiler.ir import NodeType, IntermediateRepresentation
 from spinqit.grad import grad_func_hardware
-from .backend_util import get_graph_capsule, _add_pauli_gate
+from .backend_util import _add_pauli_gate
 from .layout import generate_direct_layout, collect_gate_qubits
 from ..primitive import PauliBuilder, calculate_pauli_expectation, pauli_decompose
 from ..utils.function import requires_grad

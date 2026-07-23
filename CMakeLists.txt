@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.12)
+cmake_minimum_required(VERSION 3.18)
 
 set(CMAKE_C_STANDARD 99)
 set(CMAKE_C_STANDARD_REQUIRED True)
@@ -11,28 +11,14 @@ endif ()
 
 project(spinqit VERSION 0.0.1)
 
+find_package(Python 3.8 COMPONENTS Interpreter Development.Module REQUIRED)
+set(PYBIND11_FINDPYTHON ON)
+find_package(pybind11 CONFIG REQUIRED)
+
 add_subdirectory(cppsrc)
 
 set(WRAPPER_DIR "spinqit/backend/wrapper")
 set(SOURCES "${WRAPPER_DIR}/backend_binding.cpp")
-
-find_package(PythonLibs 3 REQUIRED)
-set(_find_pybind_cmake_command "
-import sys
-import pybind11
-sys.stdout.write(pybind11.get_cmake_dir())
-")
-
-execute_process(COMMAND "${PYTHON_EXECUTABLE}" -c "${_find_pybind_cmake_command}"
-                OUTPUT_VARIABLE _pybind_cmake
-                RESULT_VARIABLE _pybind_cresult)
-
-message(STATUS "PYBIND CMAKE: ${_pybind_cmake}")
-
-set(pybind11_DIR "${_pybind_cmake}")
-
-message(STATUS "PYBIND11 dir: ${pybind11_DIR}")
-find_package(pybind11 REQUIRED)
 
 pybind11_add_module(spinq_backends ${SOURCES})
 target_include_directories(spinq_backends PRIVATE "${CMAKE_CURRENT_LIST_DIR}/cppsrc/include"

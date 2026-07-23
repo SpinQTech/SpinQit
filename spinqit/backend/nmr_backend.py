@@ -20,7 +20,7 @@ from math import pi
 from scipy import sparse
 from autoray import numpy as ar
 
-from .backend_util import get_graph_capsule, _add_pauli_gate
+from .backend_util import get_graph_data, _add_pauli_gate
 from .basebackend import BaseBackend
 from ..utils import requires_grad
 from ..primitive import PauliBuilder, calculate_pauli_expectation, pauli_decompose
@@ -157,7 +157,7 @@ class NMRBackend(BaseBackend):
         self.assemble(ir)
         for i in range(NMRBackend.MAX_RETRIES):
             try:
-                result = self.machine.execute(get_graph_capsule(ir.dag), config.metadata)
+                result = self.machine.execute(get_graph_data(ir.dag), config.metadata)
                 break
             except Exception as e:
                 if i < NMRBackend.MAX_RETRIES - 1:

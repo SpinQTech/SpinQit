@@ -17,8 +17,15 @@ from igraph import Graph
 from spinqit.compiler import IntermediateRepresentation, NodeType
 from spinqit.compiler.translator.gate_converter import decompose_single_qubit_gate, decompose_multi_qubit_gate
 
-def get_graph_capsule(graph: Graph):
-    return graph.__graph_as_capsule()
+def get_graph_data(graph: Graph):
+    return {
+        'directed': graph.is_directed(),
+        'vertex_count': graph.vcount(),
+        'edges': graph.get_edgelist(),
+        'graph_attrs': {name: graph[name] for name in graph.attributes()},
+        'vertex_attrs': {name: graph.vs[name] for name in graph.vs.attributes()},
+        'edge_attrs': {name: graph.es[name] for name in graph.es.attributes()},
+    }
 
 def map_results(probabilities: List, qubit_mapping: List) -> List:
     qubit_num = len(qubit_mapping)
@@ -90,4 +97,3 @@ def _add_pauli_gate(gate, qubits, ir):
         node_idx_list = ir.substitute_nodes([idx], ilist, 0)
         ir.remove_nodes([idx])
         return node_idx_list
-

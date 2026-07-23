@@ -42,10 +42,7 @@ namespace py = pybind11;
 
 using namespace std;
 
-extern "C" {
-#include "util/graph_attributes.h"
-#include "igraph/igraph.h"
-}
+#include "util/graph_data.h"
 
 class BasicSimulator
 {
@@ -53,13 +50,14 @@ public:
     BasicSimulator();
     ~BasicSimulator();
 
-    Result execute(py::capsule graph, py::dict config)
+    Result execute(py::dict graph_data, py::dict config)
     {
         Result re;
         vector<StateType> sv;
         vector<double> ps;
 
-        igraph_t *gptr = (igraph_t *)graph.get_pointer();
+        NativeGraph graph(graph_data);
+        igraph_t *gptr = graph.get();
         igraph_vector_t vs_res;
         igraph_vector_init(&vs_res, 0);
         igraph_topological_sorting(gptr, &vs_res, IGRAPH_OUT);
