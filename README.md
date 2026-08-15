@@ -5,7 +5,7 @@ SpinQit is the quantum software development kit from SpinQ Technology Co., Ltd.
 ## Installation and Documentation
 
 - SpinQit is available on Windows, Linux and MacOS. Only the **Windows** version can use a local quantum computer as a backend. This package has been tested on Ubuntu 20.04 & 22.04 (x86_64), Windows 10 (x86_64), MacOS Ventura 13.0 (M1, M2) and MacOS Mojave 10.14.6 (x86_64).
-- SpinQit requires Python 3.8+.  This package has been tested with Python 3.8.13 and 3.9.12.
+- SpinQit requires Python 3.8 or Python 3.9.  This package has been tested with Python 3.8.13 and 3.9.12.
 - We suggest you use Anaconda to set up your Python environment.
 
 SpinQit can be installed using the following command:

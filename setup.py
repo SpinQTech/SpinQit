@@ -112,14 +112,15 @@ setup(
     packages=find_packages(),
     classifiers=[
         'Development Status :: 4 - Beta',
-        "Programming Language :: Python :: 3",
+        "Programming Language :: Python :: 3.8",
+        "Programming Language :: Python :: 3.9",
         "Operating System :: Microsoft :: Windows",
         "Operating System :: POSIX :: Linux",
         "Operating System :: MacOS"
     ],
     ext_modules=[CMakeExtension('spinqit.spinq_backends')],
     install_requires=['numpy<2.0.0', 'scipy', 'scikit-learn', 'torch', 'autograd==1.5.0', 'psutil', 'retworkx', 'python-igraph==0.9.10', 'pybind11', 'antlr4-python3-runtime==4.9.2', 'python-constraint', 'requests', 'matplotlib>=3.5', 'pycryptodome==3.11.0', 'autoray==0.6.1', 'noisyopt==0.2.2', 'sympy'],
-    python_requires='>=3.8',
+    python_requires=">=3.8, <3.10",
     cmdclass=dict(build_ext=CMakeBuild),
     package_data={'spinqit': package_data_files},
     data_files=date_files_list,
