@@ -21,6 +21,7 @@
 # obtain a copy of this license in the LICENSE.txt file in the root directory
 # of this source tree or at http://www.apache.org/licenses/LICENSE-2.0.
 #
+# Modified: defer graph edits and compose SWAP state transfers in wire order.
 # Any modifications or derivative works of this code must retain this
 # copyright notice, and modified files need to carry a notice indicating
 # that they have been altered from the originals.
@@ -46,11 +47,10 @@ class PureStateOnU(object):
 
     def run(self, ir: IntermediateRepresentation):
         self.wire_state = PureState(ir.dag['qnum'])
-        keep_list = []
-        non_keep_list = []
+        changes = []
         vs = ir.dag.topological_sorting()
         for v in vs:
-            if ir.dag.vs[v]['type'] == NodeType.caller.value:
+            if ir.dag.vs[v]['type'] in (NodeType.caller.value, NodeType.unitary.value):
                 break
             if ir.dag.vs[v]['type'] == NodeType.op.value:
                 if 'cmp' in ir.dag.vs[v].attributes() and ir.dag.vs[v]['cmp'] is not None:
@@ -66,19 +66,18 @@ class PureStateOnU(object):
                         self.wire_state[qarg] = None
                 elif gname == SWAP.label:
                     if self.wire_state.swap_can_be_removed(qargs[0], qargs[1]):
-                        keep_list.append(v)
+                        changes.append((v, None))
                         continue
 
                     prev = ir.dag.predecessors(ir.dag.vs[v])
                     which_swap = self.wire_state.swap_can_be_replaced(qargs[0], qargs[1])
                     if which_swap == 'both':
                         new_dag = self.swap_to_u_dag(qargs[0], qargs[1])
-                        ir.substitute_nodes([v], new_dag, ir.dag.vs[v]['type'])
-                        non_keep_list.append(v)
+                        changes.append((v, new_dag))
+                        self.wire_state.swap(qargs[0], qargs[1])
                     elif which_swap in ['left', 'right']:
                         new_dag = self.aswap_to_u_dag(qargs[0], qargs[1], which_swap)
-                        ir.substitute_nodes([v], new_dag, ir.dag.vs[v]['type'])
-                        non_keep_list.append(v)
+                        changes.append((v, new_dag))
                         self.wire_state.swap(qargs[0], qargs[1])
                     else:
                         self.wire_state.swap(qargs[0], qargs[1])
@@ -89,8 +88,12 @@ class PureStateOnU(object):
                     for qarg in qargs:
                         self.wire_state[qarg] = None
                         
-        ir.remove_nodes(keep_list, True)
-        ir.remove_nodes(non_keep_list, False)
+        for v, replacement in sorted(changes, reverse=True):
+            if replacement is None:
+                ir.remove_nodes([v], True)
+            else:
+                ir.substitute_nodes([v], replacement, ir.dag.vs[v]['type'])
+                ir.remove_nodes([v], False)
 
     def check_single_qubit_gate(self, v: Vertex):
         if (v['type'] == NodeType.op.value or v['type'] == NodeType.callee.value) \
@@ -106,22 +109,18 @@ class PureStateOnU(object):
             return False
 
     def swap_to_u_dag(self, qubit1, qubit2):
-        new_dag = []
-        if not self.check_zero_state(qubit1):
-            new_dag.append(Instruction(Rz, [qubit1], [], -1*self.wire_state[qubit1][2]))
-            new_dag.append(Instruction(Ry, [qubit1], [], -1*self.wire_state[qubit1][0]))
-            new_dag.append(Instruction(Rz, [qubit1], [], -1*self.wire_state[qubit1][1]))
-            new_dag.append(Instruction(Rz, [qubit2], [], self.wire_state[qubit1][2]))
-            new_dag.append(Instruction(Ry, [qubit2], [], self.wire_state[qubit1][0]))
-            new_dag.append(Instruction(Rz, [qubit2], [], self.wire_state[qubit1][1]))
-        if not self.check_zero_state(qubit2):
-            new_dag.append(Instruction(Rz, [qubit2], [], -1*self.wire_state[qubit2][2]))
-            new_dag.append(Instruction(Ry, [qubit2], [], -1*self.wire_state[qubit2][0]))
-            new_dag.append(Instruction(Rz, [qubit2], [], -1*self.wire_state[qubit2][1]))
-            new_dag.append(Instruction(Rz, [qubit1], [], self.wire_state[qubit2][2]))
-            new_dag.append(Instruction(Ry, [qubit1], [], self.wire_state[qubit2][0]))
-            new_dag.append(Instruction(Rz, [qubit1], [], self.wire_state[qubit2][1]))
-        return new_dag
+        # On each wire undo its own preparation, then prepare the other state.
+        result = []
+        for target, source in ((qubit1, qubit2), (qubit2, qubit1)):
+            theta, phi, lam = self.wire_state[target]
+            result.extend([Instruction(Rz, [target], [], -phi),
+                           Instruction(Ry, [target], [], -theta),
+                           Instruction(Rz, [target], [], -lam)])
+            theta, phi, lam = self.wire_state[source]
+            result.extend([Instruction(Rz, [target], [], lam),
+                           Instruction(Ry, [target], [], theta),
+                           Instruction(Rz, [target], [], phi)])
+        return result
 
     def aswap_to_u_dag(self, qubit1, qubit2, which_swap):
         if which_swap == 'left':
@@ -131,9 +130,9 @@ class PureStateOnU(object):
 
         new_dag = []
         if not self.check_zero_state(q1):
-            new_dag.append(Instruction(Rz, [q1], [], -1*self.wire_state[q1][2]))
-            new_dag.append(Instruction(Ry, [q1], [], -1*self.wire_state[q1][0]))
             new_dag.append(Instruction(Rz, [q1], [], -1*self.wire_state[q1][1]))
+            new_dag.append(Instruction(Ry, [q1], [], -1*self.wire_state[q1][0]))
+            new_dag.append(Instruction(Rz, [q1], [], -1*self.wire_state[q1][2]))
         new_dag.append(Instruction(CX, [q2, q1]))
         new_dag.append(Instruction(CX, [q1, q2]))
         if not self.check_zero_state(q1):

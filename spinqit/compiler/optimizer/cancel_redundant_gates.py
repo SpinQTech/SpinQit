@@ -60,27 +60,18 @@ class CancelRedundantGates():
             paths[index] = paths[index][1:]
 
     def run(self, ir: IntermediateRepresentation):
-        path_list = analyze(ir.dag)
-        keep_edge = []
-        for i in range(len(path_list)):
-            if len(path_list[i]) > 1:
-                ptype = ir.dag.vs[path_list[i][0]]['name']
-                if ptype in X_series or ptype in Y_series or ptype in Z_series:
-                    self.cancel_rotation_gates(path_list[i], ir)
-                    keep_edge.append(False)
-                else:
-                    self.cancel_same_gates(path_list, i)
-                    keep_edge.append(True)
-                    
-        i = 0
-        keep_list = []
-        non_keep_list = []
-        for path in path_list:
-            if len(path) > 1:
-                if keep_edge[i]:
-                    keep_list.extend(path)
-                else:
-                    non_keep_list.extend(path)
-                i += 1
-        ir.remove_nodes(keep_list, True)
-        ir.remove_nodes(non_keep_list, False)
+        paths = analyze(ir.dag)
+        removed = []
+        for path in paths:
+            if len(path) < 2:
+                continue
+            name = ir.dag.vs[path[0]]['name']
+            if name in X_series | Y_series | Z_series:
+                self.cancel_rotation_gates(path, ir)
+            else:
+                # Retain one gate for an odd number of self-inverse gates.
+                if len(path) % 2:
+                    path = path[1:]
+                ir.substitute_nodes(path, [], ir.dag.vs[path[0]]['type'])
+            removed.extend(path)
+        ir.remove_nodes(removed, False)

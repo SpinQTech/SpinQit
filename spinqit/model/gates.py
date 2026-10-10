@@ -110,7 +110,6 @@ CCX = CCX_builder.to_gate()
 CCX.label = 'CCX'
 CCX.matrix = lambda *args: np.array([[1,0,0,0,0,0,0,0], [0,1,0,0,0,0,0,0], [0,0,1,0,0,0,0,0], [0,0,0,1,0,0,0,0], [0,0,0,0,1,0,0,0], [0,0,0,0,0,1,0,0], [0,0,0,0,0,0,0,1], [0,0,0,0,0,0,1,0]])
 
-# CP_builder = GateBuilder(2)
 from .matrix_gate import MultiControlledMatrixGateBuilder
 CP_builder = MultiControlledMatrixGateBuilder(P.matrix, 1, 2)
 CP_builder.append(P, [0], lambda params: params[0]/2)

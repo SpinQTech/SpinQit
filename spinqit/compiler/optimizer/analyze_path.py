@@ -76,4 +76,36 @@ def cancellation_filter(v: int, g: Graph):
     return is_commutative(g.vs[v], g.vs[prev[0]])
 
 def analyze(g: Graph):
-    return get_paths(g, cancellation_filter)
+    """Group compatible adjacent gates, checking both ends of each step."""
+    from .util import numeric_gate_filter
+    result, visited = [], set()
+    allowed = X_series | Y_series | Z_series | CU_series | SWAP_Series | {I.label, H.label}
+    for index in g.topological_sorting():
+        if index in visited or not numeric_gate_filter(index, g):
+            continue
+        if g.vs[index]['name'] not in allowed:
+            continue
+        path = [index]
+        visited.add(index)
+        while True:
+            successors = set(g.successors(path[-1]))
+            if len(successors) != 1:
+                break
+            nxt = successors.pop()
+            if nxt in visited or not numeric_gate_filter(nxt, g):
+                break
+            cur, pre = g.vs[nxt], g.vs[path[-1]]
+            if set(g.predecessors(nxt)) != {path[-1]}:
+                break
+            if set(cur['qubits']) != set(pre['qubits']):
+                break
+            if cur['name'] == I.label or pre['name'] == I.label:
+                compatible = cur['name'] == pre['name']
+            else:
+                compatible = is_commutative(cur, pre)
+            if not compatible:
+                break
+            path.append(nxt)
+            visited.add(nxt)
+        result.append(path)
+    return result

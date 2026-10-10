@@ -127,6 +127,7 @@ class IntermediateRepresentation():
         self.dag.vs[index]['type'] = NodeType.op.value
         self.dag.vs[index]['name'] = gatename
         self.dag.vs[index]['qubits'] = qubits
+        self.dag.vs[index]['clbits'] = list(clbits)
         
         if params is not None and len(params) > 0:
             self.dag.vs[index]['params'] = params
@@ -303,8 +304,9 @@ class IntermediateRepresentation():
     
     def substitute_nodes(self, nodes: List[int], ins_list: List[Instruction], type: int) -> List:
         """
-        Substitute only 1q or 2q paths. The in_map and out_map have the same size.
-        This function does not remove nodes directly because igraph will change vids after deletion.
+        Replace a wire-contiguous subgraph, reconnecting its boundary wires.
+        Old vertices are disconnected immediately, but remain until remove_nodes
+        is called so that other saved vertex indices stay valid.
         """
         node_set = set(nodes)
         in_map = {}
@@ -321,6 +323,7 @@ class IntermediateRepresentation():
 
         out_map = {}
         out_conbit_map = {}
+        out_classical_kind = {}
         out_list = []
         out_edges = []
         for vindex in nodes[::-1]:
@@ -331,8 +334,11 @@ class IntermediateRepresentation():
                 q = e['qubit']
                 out_map[q] = e.target
                 out_list.append(q)
-            if 'conbit' in e.attributes() and e['conbit'] is not None and e.target not in node_set:
-                out_conbit_map[e['conbit']] = e.target
+            for kind in ('conbit', 'clbit'):
+                bit = e.attributes().get(kind)
+                if bit is not None and e.target not in node_set:
+                    out_conbit_map[bit] = e.target
+                    out_classical_kind[bit] = kind
 
         new_nodes = []
         for inst in ins_list:
@@ -371,8 +377,10 @@ class IntermediateRepresentation():
             for out_conbit in out_conbit_map.keys():
                 leaf = in_conbit_map[out_conbit]
                 edge = self.dag.add_edge(leaf, out_conbit_map[out_conbit])
-                edge['conbit'] = out_conbit
+                edge[out_classical_kind[out_conbit]] = out_conbit
 
+        incident = {e.index for n in nodes for e in self.dag.vs[n].all_edges()}
+        self.dag.delete_edges(sorted(incident))
         return new_nodes
 
     def get_conbits(self, node) -> List[int]:
@@ -419,9 +427,11 @@ class IntermediateRepresentation():
     def remove_nodes(self, nodes: List[int], keep_edge: bool =False):
         if nodes is None or len(nodes) == 0:
             return
+        deleted = sorted(set(nodes))
+        node_set = set(deleted)
         if keep_edge:
-            node_set = set(nodes)
-            for vindex in nodes:
+            reconnect = []
+            for vindex in deleted:
                 in_edges = self.dag.vs[vindex].in_edges()
                 for e in in_edges:
                     if 'qubit' not in e.attributes() or e['qubit'] is None or e.source in node_set:
@@ -437,10 +447,46 @@ class IntermediateRepresentation():
                         current = out_edge.target
 
                     if current not in node_set:
-                        edge = self.dag.add_edge(e.source, current)
-                        edge["qubit"] = qubit
+                        reconnect.append((e.source, current, qubit))
 
-        self.dag.delete_vertices(nodes)
+            for source, target, qubit in reconnect:
+                edge = self.dag.add_edge(source, target)
+                edge['qubit'] = qubit
+
+        from bisect import bisect_left
+
+        def new_index(old_index):
+            return old_index - bisect_left(deleted, old_index)
+
+        self.include_gate = {new_index(v) for v in self.include_gate if v not in node_set}
+        self.leaves = {key: new_index(v) for key, v in self.leaves.items() if v not in node_set}
+        self.dag.delete_vertices(deleted)
+        self._refresh_graph_records()
+
+    def _refresh_graph_records(self):
+        """Refresh saved IDs and wire endpoints without changing graph order."""
+        self.edges = self.dag.get_edgelist()
+        self.edge_attributes = {}
+        successors = {}
+        for edge in self.dag.es:
+            attrs = {key: value for key, value in edge.attributes().items() if value is not None}
+            if attrs:
+                self.edge_attributes[edge.index] = attrs
+            for kind in ('qubit', 'clbit', 'conbit'):
+                if kind in attrs:
+                    prefix = 'q' if kind == 'qubit' else 'c'
+                    successors[prefix, attrs[kind], edge.source] = edge.target
+
+        for vertex in self.dag.vs:
+            if vertex['type'] not in (NodeType.init_qubit.value, NodeType.init_clbit.value):
+                continue
+            prefix = vertex['name'][0]
+            start, _, offset = map(int, vertex['name'][1:].split('_'))
+            bit = start + offset
+            current = vertex.index
+            while (prefix, bit, current) in successors:
+                current = successors[prefix, bit, current]
+            self.leaves[prefix + str(bit)] = current
 
     def build_dag(self):
         """
@@ -465,6 +511,9 @@ class IntermediateRepresentation():
         plot(g, save_path, layout=layout, **kargs)
 
     def get_clbits(self, node) -> List[int]:
+        declared = self.dag.vs[node].attributes().get('clbits')
+        if isinstance(declared, (list, tuple)):
+            return list(declared)
         in_edges = self.dag.vs[node].in_edges()
         conbits = []
         for e in in_edges:

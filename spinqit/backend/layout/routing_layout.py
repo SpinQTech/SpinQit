@@ -20,3 +20,9 @@ def generate_routing_layout(logical_qubit_num: int, edges: List, physical_qubit_
     for i in range(logical_qubit_num):
         init_layout.add_log_to_phy(i, i)
     return init_layout
+
+def generate_trivial_layout(logical_qubit_num: int) -> List:
+    init_layout = Layout()
+    for i in range(logical_qubit_num):
+        init_layout.add_log_to_phy(i, i)
+    return init_layout

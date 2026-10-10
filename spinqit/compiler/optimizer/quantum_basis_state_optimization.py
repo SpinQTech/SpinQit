@@ -21,6 +21,7 @@
 # obtain a copy of this license in the LICENSE.txt file in the root directory
 # of this source tree or at http://www.apache.org/licenses/LICENSE-2.0.
 #
+# Modified: conservative phase-state tracking and complete Toffoli reduction.
 # Any modifications or derivative works of this code must retain this
 # copyright notice, and modified files need to carry a notice indicating
 # that they have been altered from the originals.
@@ -68,7 +69,7 @@ class ConstantsStateOptimization(object):
         changes = []
         vs = ir.dag.topological_sorting()
         for v in vs:
-            if ir.dag.vs[v]['type'] == NodeType.caller.value:
+            if ir.dag.vs[v]['type'] in (NodeType.caller.value, NodeType.unitary.value):
                 break
             if ir.dag.vs[v]['type'] == NodeType.op.value:
                 if 'cmp' in ir.dag.vs[v].attributes() and ir.dag.vs[v]['cmp'] is not None:
@@ -139,7 +140,8 @@ class ConstantsStateOptimization(object):
             if node in self.wire_state.available_rules:
                 self.wire_state[qargs[0]] = node
             elif node in self.nothing_gates:
-                continue
+                if self.wire_state[qargs[0]] not in ('0', '1'):
+                    self.wire_state[qargs[0]] = None
             else:
                 for qarg in qargs:
                     self.wire_state[qarg] = None
@@ -148,11 +150,10 @@ class ConstantsStateOptimization(object):
     def toffoli_dag(gate: str, qargs: List, state: str, ctrl_qubits: List) -> List:
         new_dag = []
         if len(state):
-            qubits = ctrl_qubits
-            qubits.append(qargs[-1])
+            qubits = list(ctrl_qubits) + [qargs[-1]]
             new_dag.append(Instruction(CX, qubits, []))
         else:
-            if gate == CX.label:
+            if gate in (CX.label, CCX.label):
                 new_gate = X
             elif gate == CY.label:
                 new_gate = Y

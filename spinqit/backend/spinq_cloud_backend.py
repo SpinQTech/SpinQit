@@ -36,7 +36,7 @@ from spinqit.model import Ry, Rz, P, T, Td, S, Sd, CP, SWAP, CCX, U, MEASURE, St
 from spinqit.model import Instruction
 from spinqit.compiler.ir import NodeType, IntermediateRepresentation
 from spinqit.grad import grad_func_hardware
-from .backend_util import get_graph_capsule, _add_pauli_gate
+from .backend_util import get_graph_capsule, _basis_rotation_ir
 from .layout import generate_direct_layout, collect_gate_qubits
 from ..primitive import PauliBuilder, calculate_pauli_expectation, pauli_decompose
 from ..utils.function import requires_grad
@@ -268,11 +268,27 @@ class SpinQCloudBackend:
                         gate_list.append(g)
                 coupling_map = []
                 active_qubits = []
+                # '''
                 if "couplingMap" in p and p["couplingMap"] is not None:
                     for k, vlist in p["couplingMap"].items():
                         active_qubits.append(int(k)-1)
                         for v in vlist:
                             coupling_map.append((int(k)-1, int(v)-1))
+                '''
+                if "couplingMap" in p and p["couplingMap"] is not None:
+                    coupling_map = p["couplingMap"]
+                    # for k, vlist in p["couplingMap"].items():
+                    # for k, vlist in p["couplingMap"]:
+                    #     active_qubits.append(int(k)-1)
+                    #     for v in vlist:
+                    #         coupling_map.append((int(k)-1, int(v)-1))
+                    for couplings in coupling_map:
+                        active_qubits.extend(couplings)
+                    active_qubits = set(active_qubits)
+                
+                    # print(active_qubits)
+                    # print(p)
+                '''
                 simu = p["simu"] if "simu" in p else False    
                 self._platforms.append(Platform(p["pcode"], p["pname"], p["maxBitNum"], p["countOnlineMachine"], gate_list, coupling_map, simu, active_qubits))
         else:
@@ -327,7 +343,6 @@ class SpinQCloudBackend:
                     raise RequestPreconditionFailedError(f"Measured qubit idx {mq} exceeds circuit qubit number {ir.dag['qnum']}.")      
             if platform_code not in [SQC_25.code, Simu_25.code]:
                 print(f'[Warn] Platform {platform_code} does not support measuring part of the qubits. Full result will be returned.')
-        
         if not debug and not platform.simu and platform.machine_count <= 0:
             raise RequestPreconditionFailedError("No machine is running for this platform. Please try later.")
         else:
@@ -363,7 +378,7 @@ class SpinQCloudBackend:
         if res:
             res_entity = json.loads(res.content)
             task_dict = res_entity["task"]
-            task = Task(task_dict["tname"], task_dict["platformCode"], None, task_dict["calcMatrix"], task_dict["shots"], description=task_dict["description"] )
+            task = Task(task_dict["tname"], task_dict["platformCode"], task_dict["bitNum"], task_dict["calcMatrix"], task_dict["shots"], description=task_dict["description"] )
             task.set_task_code(task_dict["tcode"])
             task.set_status(task_dict["tstatus"])
             if task_dict["createdTime"] is not None:
@@ -509,11 +524,10 @@ class SpinQCloudBackend:
                 hamiltonian = pauli_decompose(hamiltonian)
             value = 0.0
             mqubits = config.metadata['mqubits'] if 'mqubits' in config.metadata else list(range(ir.qnum))
+            # self.assemble(ir)
             for pstr, coeff in hamiltonian:
-                h_part = PauliBuilder(pstr).to_gate()
-                node_idx = _add_pauli_gate(h_part, mqubits, ir)
-                result = self.execute(ir, config)                
-                ir.remove_nodes(node_idx)
+                measurement_ir = _basis_rotation_ir(pstr, mqubits, ir)
+                result = self.execute(measurement_ir, config)
                 value += coeff * calculate_pauli_expectation(pstr, result.probabilities)
             return value, None
         elif measure_op.mtype == 'prob':

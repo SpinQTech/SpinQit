@@ -20,13 +20,9 @@ from .util import get_paths, get_matrix
 from spinqit.model import Instruction, Ry, Rz
 
 def single_qubit_filter(v: int, g: Graph):
-    if 'cmp' in g.vs[v].attributes() and g.vs[v]['cmp'] is not None:
-        return False
-    type = g.vs[v]['type']
-    tflag = (type == NodeType.op.value or type == NodeType.callee.value)
-    edges = g.vs[v].in_edges()
-    eflag = (len(edges) == 1 and 'qubit' in edges[0].attributes()) and edges[0]['qubit'] is not None
-    return tflag and eflag
+    from .util import numeric_gate_filter
+    return numeric_gate_filter(v, g, 1)
+
 
 class CollapseSingleQubitGates(object):
     def __init__(self) -> None:

@@ -21,7 +21,7 @@ from scipy import sparse
 from spinqit import CP
 from spinqit.compiler.ir import NodeType
 
-from .backend_util import _add_pauli_gate
+from .backend_util import _basis_rotation_ir
 from ..model.parameter import LazyParameter
 from ..primitive import PauliBuilder, calculate_pauli_expectation
 from ..utils.function import _flatten, requires_grad
@@ -157,11 +157,9 @@ class QasmBackend:
             value = 0.0
             hamiltonian = measure_op.hamiltonian
             mqubits = config.mqubits if config.mqubits is not None else list(range(ir.qnum))
-            for i, (pstr, coeff) in enumerate(hamiltonian):
-                h_part = PauliBuilder(pstr).to_gate()
-                node_idx = _add_pauli_gate(h_part, mqubits, ir)
-                result = self.execute(ir, config)
-                ir.remove_nodes(node_idx)
+            for pstr, coeff in hamiltonian:
+                measurement_ir = _basis_rotation_ir(pstr, mqubits, ir)
+                result = self.execute(measurement_ir, config)
                 value += coeff * calculate_pauli_expectation(pstr, result.probabilities)
             return value, None
         else:
@@ -217,128 +215,115 @@ class QasmBackend:
 
     @staticmethod
     def convert_ir_to_qasm(ir):
-        qasm_content = ''
-
-        qasm_content += 'OPENQASM 2.0;\n'
-        qasm_content += 'include "qelib1.inc";\n'
-        edges = defaultdict(list)
-        for u, v in ir.edges:
-            if v not in edges[u]:
-                edges[u].append(v)
-
-        # Before the qreg are the `qelib1.inc` callee node,
-        qreg_dict = {}
-        creg_dict = {}
-        visited = set()
-        for i in range(ir.dag.vcount()):
-            v = ir.dag.vs[i]
-            if i in visited or i in ir.include_gate:
-                continue
+        graph = ir.dag
+        order = graph.topological_sorting()
+        lines = ['OPENQASM 2.0;', 'include "qelib1.inc";']
+        qregs, cregs = {}, {}
+        for v in graph.vs:
             if v['type'] == NodeType.register.value:
-                register, num = v['name'].split('_')
-                args = register[0]
-                qasm_content += f'{args}reg {register}[{int(num)}];\n'
-            elif v['type'] == NodeType.init_qubit.value:
-                register, _, idx = v['name'].split('_')
-                qreg_dict[int(idx) + int(register[1:])] = (register, int(idx))
-            elif v['type'] == NodeType.init_clbit.value:
-                register, _, idx = v['name'].split('_')
-                creg_dict[int(idx) + int(register[1:])] = (register, int(idx))
-            elif v['type'] == NodeType.definition.value:
-                gate = v['name'].lower()
-                if gate not in gate_name:
-                    qubits = v['qubits']
-                    param_num = v['params']
-                    qargs = []
-                    pargs = []
-                    qasm_content += f'gate {gate}'
-                    if param_num > 0:
-                        qasm_content += ' ('
-                        for j in range(param_num):
-                            pargs.append(f'a{j}')
-                        qasm_content += ','.join(pargs) + ')'
-                    for j in range(qubits):
-                        if j == qubits - 1:
-                            qasm_content += f' qb{j}\n'
-                        else:
-                            qasm_content += f' qb{j},'
-                        qargs.append(f'qb{j}')
-                    qasm_content += '{\n'
+                register, size = v['name'].split('_')
+                lines.append('{}reg {}[{}];'.format(register[0], register, size))
+            elif v['type'] in (NodeType.init_qubit.value, NodeType.init_clbit.value):
+                prefix = v['name'][0]
+                start, size, offset = map(int, v['name'][1:].split('_'))
+                mapping = qregs if prefix == 'q' else cregs
+                mapping[start + offset] = (prefix + str(start), offset)
 
-                    edge = edges[i]
-                    while edge:
-                        idx = edge[0]
-                        _v = ir.dag.vs[idx]
-                        if _v['type'] != 1 and _v['type'] != 3:
-                            raise ValueError
-                        conbits = [creg_dict[i][0] for i in ir.get_conbits(i)]
-                        if 'cmp' in v.attributes() and v['cmp'] is not None:
-                            relation = comparator_map[v['cmp']]
-                            qasm_content += f'if ({conbits[0]}{relation}{v["constant"]}) '
-                        _gate = _v['name'].lower()
-                        _gate = gate_name.get(_gate, _gate)
-                        qubits = [qargs[i] for i in _v['qubits']]
-                        param = _v['params']
-                        if 'pindex' in _v.attributes() and _v['pindex'] is not None:
-                            start = 0
-                            _v_pargs = []
-                            for f in param:
-                                arg_count = f.__code__.co_argcount
-                                if arg_count == 0:
-                                    _v_pargs.append(str(f()))
-                                else:
-                                    _v_pargs.append(list(pargs[i] for i in _v['pindex'][start:start + arg_count]))
-                                    start += arg_count
-                            if _v['expression'] is None:
-                                _v_expression = sum(_v_pargs, [])
-                            else:
-                                expression_list = _v['expression']
-                                _v_expression = []
-                                for i, expression in enumerate(expression_list):
-                                    func = eval(expression)
-                                    _v_expression.append(func(*_v_pargs[i]))
-                            qasm_content += f'{_gate}({",".join(_v_expression)}) {",".join(qubits)};\n'
-                        else:
-                            qasm_content += f'{_gate} {",".join(qubits)};\n'
-                        edge = edges[idx]
-                        visited.add(idx)
+        def condition(v):
+            if v.attributes().get('cmp') is None:
+                return ''
+            bits = ir.get_conbits(v.index)
+            registers = {cregs[b][0] for b in bits}
+            if len(registers) != 1:
+                raise ValueError('QASM condition must address one complete classical register')
+            register = next(iter(registers))
+            if bits != sorted(b for b in cregs if cregs[b][0] == register):
+                raise ValueError('QASM condition must address one complete classical register')
+            return 'if({}{}{}) '.format(register, comparator_map[v['cmp']], v['constant'])
 
-                    qasm_content += '}\n'
-            elif v['type'] == NodeType.op.value:
-                conbits = [creg_dict[i][0] for i in ir.get_conbits(i)]
-                if 'cmp' in v.attributes() and v['cmp'] is not None:
-                    relation = comparator_map[v['cmp']]
-                    qasm_content += f'if ({conbits[0]}{relation}{v["constant"]}) '
-                gate = v['name'].lower()
-                gate = gate_name.get(gate, gate)
-                qubits = [qreg_dict[i] for i in v['qubits']]
-                if gate == 'measure':
-                    clbits = [creg_dict[i] for i in ir.get_clbits(i)]
-                    for (q, q_idx), (c, c_idx) in zip(qubits, clbits):
-                        qasm_content += f'{gate} {q}[{q_idx}] -> {c}[{c_idx}];\n'
-                else:
-                    param = v['params'] if 'params' in v.attributes() else None
-                    if not param:
-                        qubits = [f'{q[0]}[{q[1]}]' for q in qubits]
-                        qasm_content += f'{gate} {",".join(qubits)};\n'
+        aliases = dict(gate_name, cnot='cx', ycon='cy', zcon='cz')
+        def statement(v, wires, params):
+            name = aliases.get(v['name'].lower(), v['name'].lower())
+            arguments = '(' + ','.join(map(str, params)) + ')' if params else ''
+            return '{}{} {};'.format(name, arguments, ','.join(wires))
+
+        definitions = {v['name']: v.index for v in graph.vs if v['type'] == NodeType.definition.value}
+        bodies = {name: set(graph.subcomponent(idx, mode='out')) - {idx}
+                  for name, idx in definitions.items()}
+        internal = set().union(*bodies.values()) if bodies else set()
+        emitted, active = set(), set()
+        def emit_definition(name):
+            if name in emitted:
+                return
+            if name in active:
+                raise ValueError('Recursive QASM gate definition')
+            index = definitions[name]
+            if index in ir.include_gate:
+                emitted.add(name)
+                return
+            active.add(name)
+            body = [i for i in order if i in bodies[name]]
+            for i in body:
+                v = graph.vs[i]
+                if v['type'] == NodeType.caller.value:
+                    if v['name'] not in definitions:
+                        raise ValueError('Missing QASM gate definition: ' + v['name'])
+                    emit_definition(v['name'])
+            root = graph.vs[index]
+            args = ['a{}'.format(i) for i in range(root['params'])]
+            wires = ['qb{}'.format(i) for i in range(root['qubits'])]
+            signature = '(' + ','.join(args) + ')' if args else ''
+            lines.append('gate {}{} {} {{'.format(name.lower(), signature, ','.join(wires)))
+            for i in body:
+                v = graph.vs[i]
+                if v['type'] not in (NodeType.callee.value, NodeType.caller.value):
+                    raise ValueError('Unsupported node in QASM gate definition')
+                params, offset = [], 0
+                expressions = v.attributes().get('expression')
+                pindex = v.attributes().get('pindex') or []
+                for j, f in enumerate(v.attributes().get('params') or []):
+                    if not callable(f):
+                        params.append(f)
+                        continue
+                    count = f.__code__.co_argcount
+                    if expressions:
+                        selected = [args[k] for k in pindex[offset:offset + count]]
+                        params.append(eval(expressions[j])(*selected))
+                        offset += count
                     else:
-                        qubits = [f'{q[0]}[{q[1]}]' for q in qubits]
-                        qasm_content += f'{gate}({",".join(map(str, param))}) {",".join(qubits)};\n'
-            elif v['type'] == NodeType.caller.value:
-                conbits = [creg_dict[i][0] for i in ir.get_conbits(i)]
-                if 'cmp' in v.attributes() and v['cmp'] is not None:
-                    relation = comparator_map[v['cmp']]
-                    qasm_content += f'if ({conbits[0]}{relation}{v["constant"]}) '
-                gate = v['name'].lower()
-                gate = gate_name.get(gate, gate)
-                qubits = [f'{qreg_dict[i][0]}[{qreg_dict[i][1]}]' for i in v['qubits']]
-                param = v['params']
-                if not param:
-                    qasm_content += f'{gate} {",".join(qubits)};\n'
-                else:
-                    qasm_content += f'{gate}({",".join(map(str, param))}) {",".join(qubits)};\n'
-            visited.add(i)
-        return qasm_content
+                        # Native definition functions consume a parameter list.
+                        import sympy
+                        symbols = list(map(sympy.Symbol, args))
+                        value = f(symbols) if pindex == [-1] else f(*[symbols[k] for k in pindex[offset:offset+count]])
+                        offset += count
+                        values = value if isinstance(value, (list, tuple)) else [value]
+                        params.extend(str(x).replace('**', '^') for x in values)
+                lines.append(statement(v, [wires[q] for q in v['qubits']], params))
+            lines.append('}')
+            active.remove(name)
+            emitted.add(name)
+        for name in definitions:
+            emit_definition(name)
+
+        for index in order:
+            v = graph.vs[index]
+            if index in internal or index in ir.include_gate:
+                continue
+            if v['type'] in (NodeType.register.value, NodeType.init_qubit.value,
+                             NodeType.init_clbit.value, NodeType.definition.value):
+                continue
+            if v['type'] not in (NodeType.op.value, NodeType.caller.value):
+                raise ValueError('QASM export requires decomposed gate nodes')
+            prefix = condition(v)
+            wires = ['{}[{}]'.format(*qregs[q]) for q in v['qubits']]
+            if v['name'] == 'MEASURE':
+                targets = ['{}[{}]'.format(*cregs[c]) for c in ir.get_clbits(index)]
+                if len(wires) != len(targets):
+                    raise ValueError('Measurement operand counts differ')
+                lines.extend(prefix + 'measure {} -> {};'.format(q, c) for q, c in zip(wires, targets))
+            else:
+                lines.append(prefix + statement(v, wires, v.attributes().get('params') or []))
+        return '\n'.join(lines) + '\n'
 
     @staticmethod
     def save_file(qasm_str, file_name):

@@ -4,9 +4,8 @@ SpinQit is the quantum software development kit from SpinQ Technology Co., Ltd.
 
 ## Installation and Documentation
 
-- SpinQit is available on Windows, Linux and MacOS. Only the **Windows** version can use a local quantum computer as a backend. This package has been tested on Ubuntu 20.04 & 22.04 (x86_64), Windows 10 (x86_64), MacOS Ventura 13.0 (M1, M2) and MacOS Mojave 10.14.6 (x86_64).
-- SpinQit requires Python 3.8+.  This package has been tested with Python 3.8.13 and 3.9.12.
-- We suggest you use Anaconda to set up your Python environment.
+- SpinQit is available on Windows, Linux and MacOS. This package has been tested on Ubuntu 20.04 & 22.04 (x86_64), Windows 10 & 11 (x86_64), macOS Ventura 13.0 (M1 & x86_64).
+- SpinQit requires Python 3.9, 3.10 or 3.11.  This package has been tested with Python 3.9.25, 3.10.20 and 3.11.16.
 
 SpinQit can be installed using the following command:
 ```python
@@ -15,7 +14,7 @@ pip install spinqit
 
 To build from the source on Github, you need a C/C++ compiler and CMake in addition. We do not recommend this way unless you are very familiar with the tools.
 
-Please find the documentation in doc/GettingStarted.md. An online version is available at [https://doc.spinq.cn/doc/spinqit/index.html](https://doc.spinq.cn/doc/spinqit/index.html).
+Please find the documentation in doc/GettingStarted.md. An online version is available at [https://doc.spinq.com/doc/spinqit/index.html](https://doc.spinq.com/doc/spinqit/index.html).
 
 ## Hello Example
 
@@ -59,5 +58,3 @@ There are three steps in a SpinQit program.
 2. Generate an intermediate representation of the program by compiling it with the appropriate compiler. 
 3. Run the code using your preferred backend. The example above uses the basic classical simulator.
 
-## Community
-SpinQit is an open community. We welcome your contributions! We use issues here for discussion. We also have meetings. You may contact spinqit@spinq.cn if you are interested.

@@ -19,7 +19,7 @@ import numpy as onp
 from autoray import numpy as ar
 from scipy import sparse
 
-from .backend_util import get_graph_capsule, _add_pauli_gate
+from .backend_util import get_graph_capsule, _basis_rotation_ir
 from spinqit.compiler import IntermediateRepresentation, NodeType
 from spinqit.model import Instruction
 from spinqit.model import I, H, X, Y, Z, Rx, Ry, Rz, T, Td, S, Sd, P, CX, CY, CZ, SWAP, CCX, U
@@ -55,7 +55,6 @@ class BasicSimulatorBackend(BaseBackend):
 
         self.simulator = BasicSimulator()
 
-    @functools.lru_cache
     def assemble(self, ir: IntermediateRepresentation):
         i = 0
         while i < ir.dag.vcount():
@@ -82,8 +81,16 @@ class BasicSimulatorBackend(BaseBackend):
                     i -= 1
                 elif v['name'] == CX.label:
                     v['name'] = 'CNOT'
-                elif v['name'] == CY.label:
-                    v['name'] = 'YCON'
+                elif v['name'] in (CY.label, 'YCON'):
+                    # Use the exact phase-conjugated CNOT form; the bundled
+                    # YCON primitive gives incorrect states for superpositions.
+                    control, target = v['qubits']
+                    replacement = [Instruction(Sd, [target]),
+                                   Instruction(CX, [control, target]),
+                                   Instruction(S, [target])]
+                    ir.substitute_nodes([v.index], replacement, v['type'])
+                    ir.remove_nodes([v.index], False)
+                    i -= 1
                 elif v['name'] == CZ.label:
                     v['name'] = 'ZCON'
                 elif v['name'] == CCX.label:
@@ -98,12 +105,10 @@ class BasicSimulatorBackend(BaseBackend):
     def __qubits_and_clbits(v):
         edges = v.in_edges()
         edges.sort(key=lambda k: k.index)
-        qubits = []
+        qubits = list(v['qubits'])
         clbits = []
         for e in edges:
-            if 'qubit' in e.attributes() and e['qubit'] is not None:
-                qubits.append(e['qubit'])
-            elif 'clbit' in e.attributes() and e['clbit'] is not None:
+            if 'clbit' in e.attributes() and e['clbit'] is not None:
                 clbits.append(e['clbit'])
         return qubits, clbits
 
@@ -155,11 +160,9 @@ class BasicSimulatorBackend(BaseBackend):
             value = 0.0
             hamiltonian = measure_op.hamiltonian
             mqubits = config.metadata['mqubits'] if 'mqubits' in config.metadata else list(range(ir.qnum))
-            for i, (pstr, coeff) in enumerate(hamiltonian):
-                h_part = PauliBuilder(pstr).to_gate()
-                node_idx = _add_pauli_gate(h_part, mqubits, ir)
-                result = self.execute(ir, config)
-                ir.remove_nodes(node_idx)
+            for pstr, coeff in hamiltonian:
+                measurement_ir = _basis_rotation_ir(pstr, mqubits, ir)
+                result = self.execute(measurement_ir, config)
                 value += coeff * calculate_pauli_expectation(pstr, result.probabilities)
             return value, None
         else:

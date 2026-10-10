@@ -13,7 +13,7 @@ If you prefer to install Anaconda, please make sure to download the correct vers
 
 Download and install CMake https://cmake.org/download/
 
-CMake version must > 3.16.0 to compile igraph.
+CMake 3.18 or newer is required to build this project.
 
 Remember to add CMake to your path.
 

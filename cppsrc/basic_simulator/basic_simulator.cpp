@@ -226,8 +226,11 @@ inline condition get_condition_from_vertex(const igraph_t *g, igraph_integer_t v
     igraph_vector_init(&conbit_res, 0);
     get_numeric_edge_attrs(g, edge_conbit_attr, es, &conbit_res);
     vector<size_t> clbits;
-    for (int i = 0; i < igraph_vector_size(&conbit_res); i++) {
-        clbits.push_back(VECTOR(conbit_res)[i]);
+    // IR/OpenQASM use the lowest classical index as the least significant bit.
+    // The vendor evaluator consumes the most-significant bit first.
+    igraph_vector_sort(&conbit_res);
+    for (long int i = igraph_vector_size(&conbit_res); i > 0; --i) {
+        clbits.push_back(VECTOR(conbit_res)[i - 1]);
     }
    
     condition cond(clbits, RELATION(relation), (int)constant);

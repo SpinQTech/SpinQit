@@ -14,6 +14,7 @@
 
 from .layout import Layout
 from .layout_util import collect_gate_qubits
-from .physical_layout import generate_direct_layout
-from .routing_layout import generate_routing_layout
-from .sven_swap_mapper import generate_lookahead_routing
+from .physical_layout import generate_direct_layout, generate_vf2_layout, check_layout
+from .routing_layout import generate_routing_layout, generate_trivial_layout
+from .sven_swap_mapper import generate_sven_routing
+from .lookahead_routing import generate_lookahead_routing

@@ -21,9 +21,9 @@ from autoray import numpy as ar
 import numpy as onp
 from scipy import sparse
 
-from spinqit.backend.backend_util import _add_pauli_gate
-from spinqit.primitive.pauli_builder import PauliBuilder
 from .basebackend import BaseBackend
+from spinqit.backend.backend_util import _basis_rotation_ir, lazy_property
+from spinqit.primitive.pauli_builder import PauliBuilder
 from spinqit.grad import grad_func_torch
 from spinqit.model.parameter import LazyParameter, Parameter
 from spinqit.utils.function import _topological_sort, _dfs, requires_grad
@@ -105,24 +105,6 @@ class TorchSimulatorConfig:
             new_dtype = dtype_map[new_dtype]
         dtype = new_dtype
 
-
-def lazy_property(fn):
-    """
-    A lazy property decorator.
-    The function decorated is called the first time to retrieve the result and
-    then that calculated result is used the next time you access the value.
-    """
-    attr = '_lazy__' + fn.__name__
-
-    @property
-    def _lazy_property(self):
-        if not hasattr(self, attr):
-            setattr(self, attr, fn(self))
-        return getattr(self, attr)
-
-    return _lazy_property
-
-
 class TorchResult:
     def __init__(self, states, config):
         self.states = states
@@ -196,10 +178,6 @@ class TorchSimulator:
     """
     Using pytorch to simulate the quantum circuit
     """
-
-    # def __init__(self):
-        # self.result = TorchResult()
-
     def __call__(self, exe, config) -> TorchResult:
         """
 
@@ -412,11 +390,9 @@ class TorchSimulatorBackend(BaseBackend):
             value = 0.0
             hamiltonian = measure_op.hamiltonian
             mqubits = config.mqubits if config.mqubits is not None else list(range(ir.qnum))
-            for i, (pstr, coeff) in enumerate(hamiltonian):
-                h_part = PauliBuilder(pstr).to_gate()
-                node_idx = _add_pauli_gate(h_part, mqubits, ir)
-                result = self.execute(ir, config)
-                ir.remove_nodes(node_idx)
+            for pstr, coeff in hamiltonian:
+                measurement_ir = _basis_rotation_ir(pstr, mqubits, ir)
+                result = self.execute(measurement_ir, config)
                 value += coeff * torch_pauli_expectation(pstr, result.raw_probabilities)
             return value, None
         else:

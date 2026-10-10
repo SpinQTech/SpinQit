@@ -20,13 +20,13 @@ from math import pi
 from scipy import sparse
 from autoray import numpy as ar
 
-from .backend_util import get_graph_capsule, _add_pauli_gate
+from .backend_util import get_graph_capsule, _basis_rotation_ir
 from .basebackend import BaseBackend
 from ..utils import requires_grad
-from ..primitive import PauliBuilder, calculate_pauli_expectation, pauli_decompose
+from ..primitive import calculate_pauli_expectation, pauli_decompose
 from spinqit.compiler import IntermediateRepresentation, NodeType
 from spinqit.model import Instruction
-from spinqit.model import Ry, Rz, Sd, P, CX, CY, CZ, SWAP, CCX, U, MEASURE, StateVector
+from spinqit.model import H, Ry, Rz, Sd, P, CX, CY, CZ, SWAP, CCX, U, MEASURE, StateVector
 from spinqit.model.parameter import LazyParameter
 from spinqit.spinq_backends import NMR
 from spinqit import CircuitOperationValidationError
@@ -195,10 +195,8 @@ class NMRBackend(BaseBackend):
             value = 0.0
             mqubits = config.metadata['mqubits'] if 'mqubits' in config.metadata else list(range(ir.qnum))
             for pstr, coeff in hamiltonian:
-                h_part = PauliBuilder(pstr).to_gate()
-                node_idx = _add_pauli_gate(h_part, mqubits, ir)
-                result = self.execute(ir, config)
-                ir.remove_nodes(node_idx)
+                measurement_ir = _basis_rotation_ir(pstr, mqubits, ir)
+                result = self.execute(measurement_ir, config)
                 value += coeff * calculate_pauli_expectation(pstr, result.probabilities)
             return value, None
         elif measure_op.mtype == 'prob':

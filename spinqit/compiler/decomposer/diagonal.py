@@ -14,15 +14,15 @@
 from typing import List, Union
 import numpy as np
 import cmath
-from spinqit.model import Gate, GateBuilder
+from spinqit.model import Gate, GateBuilder, Ph
 from .uniformly_controlled_rotation_gate import generate_uc_rot_gates
 
 def generate_diagonal_gates(diag: Union[List, np.ndarray]) -> Gate:
     """
-    Using Rotation type gate to construct the diagonal gates.
+    Construct a diagonal gate in big-endian computational basis order.
 
-    Notes:
-        For now, the gate is still lost phase
+    Preserve the global phase: it becomes a relative phase when this gate
+    is controlled, as in quantum phase estimation.
 
     """
     qnum = int(np.log2(len(diag)))
@@ -37,12 +37,15 @@ def generate_diagonal_gates(diag: Union[List, np.ndarray]) -> Gate:
             diag_phases[i // 2] = (diag_phases[i] + diag_phases[i + 1]) / 2.0
             angles_rz.append(z_angle)
 
-        previous_act = int(np.log2(n))
-        control_indexes = list(range(qnum - previous_act + 1, qnum))
-        control_qubits = [q for q in control_indexes]
-        target_qubit = qnum - previous_act
+        target_qubit = int(np.log2(n)) - 1
+        # Uniformly controlled rotations take the least significant control
+        # first, whereas matrix rows have qubit 0 most significant.
+        control_qubits = list(range(target_qubit - 1, -1, -1))
         uc_rot = generate_uc_rot_gates(angles_rz, 'z')
         diag_builder.append(uc_rot, [target_qubit] + control_qubits)
         n //= 2
+
+    if abs(diag_phases[0]) > 1e-10:
+        diag_builder.append(Ph, [0], diag_phases[0])
 
     return diag_builder.to_gate()

@@ -19,20 +19,9 @@ from ..ir import IntermediateRepresentation, NodeType
 from .util import get_paths, get_matrix, get_qubits
 
 def two_qubit_filter(v: int, g: Graph):
-    if 'cmp' in g.vs[v].attributes() and g.vs[v]['cmp'] is not None:
-        return False
-    type = g.vs[v]['type']
-    tflag = (type == NodeType.op.value or type == NodeType.callee.value)
-    edges = g.vs[v].in_edges()
-    eflag = (len(edges) == 2) 
-    if eflag:
-        if 'qubit' in edges[0].attributes() and edges[0].source == edges[1].source:
-            eflag = True
-        else:
-            successors = g.successors(v)
-            if len(successors) != 2 or successors[0] != successors[1]:
-                eflag = False
-    return tflag and eflag
+    from .util import numeric_gate_filter
+    return numeric_gate_filter(v, g, 2)
+
 
 class CollapseTwoQubitGates(object):
     def __init__(self) -> None:
@@ -45,7 +34,7 @@ class CollapseTwoQubitGates(object):
                 node = ir.dag.vs[path[0]]
                 qargs = node['qubits']
                 op_matrix = get_matrix(node['name'], [0])
-                first_qubit = qargs[0] if qargs[0] < qargs[1] else qargs[1]
+                first_qubit = qargs[0]
 
                 for index in path[1:]:
                     node = ir.dag.vs[index]

@@ -15,7 +15,6 @@
 from typing import List
 import numpy as np
 import copy as cp
-import random
 import cmath
 from .ZYZdecomposer import decompose_zyz
 from spinqit.model import Instruction
@@ -23,43 +22,42 @@ from spinqit.model import DecomposerError
 from spinqit.model import I, Rz, Ry, CX
 
 TOLERANCE = 1.e-15
-LOOP_LIMIT = 100
 Magic=[[1,1j,0,0],[0,0,1j,1],[0,0,1j,-1],[1,-1j,0,0]]/np.sqrt(2)
 M=np.matrix(Magic)
 Mt=np.conjugate(np.transpose(M))
 InCNOT=[[1,0,0,0],[0,0,0,1],[0,0,1,0],[0,1,0,0]]
 
 def find_Udiag(U: np.matrix):
-    D,Q=np.linalg.eig(U)
-    Dt=cp.copy(D)
-    Row=np.zeros([len(D),len(D)], complex)
-    TF=True
-    r1=[0,1,2,3]
-    r2=cp.copy(r1)
-   
-    loop = 0
-    while TF:
-        if loop >= LOOP_LIMIT:
-            break
-        random.shuffle(r2)     
-        for i in range(0,len(D)):
-            for j in range(0,len(D)):
-                Row[j,r2[i]]=np.round(cp.copy(Q[j,r1[i]]),5)
-        loop += 1
+    """Simultaneously diagonalize the commuting real and imaginary parts.
 
-        if ((np.round(np.dot(Row,np.transpose(Row)),3)==np.eye(4)).all()):
-            if (np.round(np.linalg.det(Row),3)==1):    
-                TF=False                           
-    
-    if (TF):
-        raise  DecomposerError("No Such diagonalize matrix belong to SO(4)");
-    
-    for i in range(0,4):
-        Dt[r2[i]]=cp.copy(D[r1[i]])
-        
-    Dt=np.array(Dt,complex)
-    Row=np.array(Row,complex)
-    return Dt, Row
+    A real eigensolver handles repeated eigenvalues without random searches.
+    Alternate real combinations resolve near-degenerate real parts whose
+    imaginary eigenvalues are well separated. Seven fixed choices cover the
+    six possible pairwise spectral collisions of a four-dimensional matrix.
+    """
+    u = np.asarray(U, dtype=complex)
+    if (u.shape != (4, 4) or not np.allclose(u, u.T, atol=1e-10, rtol=0)
+            or not np.allclose(u.conj().T @ u, np.eye(4), atol=1e-10, rtol=0)):
+        raise DecomposerError('Expected a symmetric 4x4 unitary matrix')
+    real = (u.real + u.real.T) / 2
+    imag = (u.imag + u.imag.T) / 2
+    for weight in (0., 1., -1., 2., -2., 3., -3.):
+        values, basis = np.linalg.eigh(real + weight * imag)
+        start = 0
+        while start < 4:
+            end = start + 1
+            while end < 4 and abs(values[end] - values[start]) < 1e-12:
+                end += 1
+            block = basis[:, start:end]
+            _, rotation = np.linalg.eigh(block.T @ imag @ block)
+            basis[:, start:end] = block @ rotation
+            start = end
+        if np.linalg.det(basis) < 0:
+            basis[:, 0] *= -1
+        diagonal = np.diag(basis.T @ u @ basis)
+        if np.allclose(basis @ np.diag(diagonal) @ basis.T, u, atol=1e-12, rtol=0):
+            return diagonal, basis
+    raise DecomposerError('Cannot diagonalize symmetric unitary matrix')
 
 def check(U):
     TF = True
@@ -153,7 +151,7 @@ def decompose_two_qubit_gate(U: np.matrix, qubit0: int, qubit1: int) -> List[Ins
     U12=np.dot(M,np.dot(K3,Mt))
     
     UCAN=np.dot(M,np.dot(SqrtD,Mt))
-    U3, U4=np.round(CANdecomposition(UCAN),5)
+    U3, U4 = CANdecomposition(UCAN)
 
     ControlU3=ControlU(U3)
     U1,U2=De_Kron_Pro(U12)

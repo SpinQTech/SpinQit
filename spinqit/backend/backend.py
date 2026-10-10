@@ -14,6 +14,7 @@
 from spinqit.model.exceptions import InappropriateBackendError
 from .basic_simulator_backend import BasicSimulatorBackend
 from .nmr_backend import NMRBackend
+from .sc_backend import SCBackend
 from .spinq_cloud_backend import SpinQCloudBackend
 from .pytorch_backend import TorchSimulatorBackend
 from .qasm_backend import QasmBackend
@@ -21,8 +22,9 @@ from .qasm_backend import QasmBackend
 BS = BasicSimulatorBackend()
 NB = NMRBackend()
 TSB = TorchSimulatorBackend()
+SCB = SCBackend()
 
-avail_backends = ['spinq','torch','nmr','cloud','qasm']
+avail_backends = ['spinq','torch','nmr', 'sc', 'cloud','qasm']
 sv_backends = ['spinq','torch']
 
 def get_basic_simulator():
@@ -30,6 +32,9 @@ def get_basic_simulator():
 
 def get_nmr():
     return NB
+
+def get_superconduct():
+    return SCB
 
 def get_torch_simulator():
     return TSB
@@ -58,6 +63,21 @@ def check_backend_and_config(backend_mode, **kwargs):
         from .nmr_backend import NMRConfig
         backend = NB
         config = NMRConfig()
+        shots = kwargs.get('shot', 1024)
+        ip = kwargs.get('ip', None)
+        port = kwargs.get('port', None)
+        account = kwargs.get('account', None)
+        task_name = kwargs.get('task_name', 'NoName')
+        task_desc = kwargs.get('task_desc', 'No description.')
+        config.configure_shots(shots)
+        config.configure_ip(ip)
+        config.configure_port(port)
+        config.configure_account(*account)
+        config.configure_task(task_name, task_desc)
+    elif backend_mode == 'sc':
+        from .sc_backend import SCConfig
+        backend = SCB
+        config = SCConfig()
         shots = kwargs.get('shot', 1024)
         ip = kwargs.get('ip', None)
         port = kwargs.get('port', None)

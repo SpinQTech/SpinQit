@@ -34,20 +34,9 @@ def decompose_zyz(mat):
     phase = 0.5 * cmath.phase(coeff)
     v_mat = cmath.exp(-1j * phase) * mat
 
-    if abs(v_mat[0, 0]) < abs(v_mat[0, 1]):
-        beta = 2*cmath.asin(abs(v_mat[0, 1]))
-    else:
-        beta = 2*cmath.acos(abs(v_mat[0, 0]))
-
-    if cmath.cos(beta/2) == 0:
-        gammaplalpha2 = 0.0
-    else:
-        gammaplalpha2 = cmath.phase(v_mat[1, 1] / cmath.cos(beta/2))
-
-    if cmath.sin(beta/2) == 0:
-        gammamialpha2 = 0.0
-    else:
-        gammamialpha2 = cmath.phase(v_mat[1, 0] / cmath.sin(beta/2))
+    beta = 2 * math.atan2(abs(v_mat[1, 0]), abs(v_mat[0, 0]))
+    gammaplalpha2 = cmath.phase(v_mat[1, 1])
+    gammamialpha2 = cmath.phase(v_mat[1, 0])
 
     gamma = gammaplalpha2 + gammamialpha2
     alpha = gammaplalpha2 - gammamialpha2

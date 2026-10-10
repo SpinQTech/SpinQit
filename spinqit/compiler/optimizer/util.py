@@ -35,6 +35,10 @@ def get_paths(graph: Graph, filter: Callable) -> List:
         
         while len(set(slist))==1 and filter(slist[0], graph) and not slist[0] in visited:
             cur = slist[0]
+            # A path stays on the same wires, including when one wire ends.
+            if (set(graph.vs[cur]['qubits']) != set(graph.vs[path[-1]]['qubits'])
+                    or set(graph.predecessors(cur)) != {path[-1]}):
+                break
             path.append(cur)
             visited.add(cur)
             slist = graph.successors(cur)
@@ -57,3 +61,32 @@ def get_qubits(v: Vertex) -> List[int]:
         if 'qubit' in e.attributes() and e['qubit'] is not None:
             result.append(e['qubit'])
     return result
+
+def numeric_gate_filter(index, graph, arity=None):
+    """Only optimize numeric, unconditional operations on consistent wires.
+
+    Definition bodies can carry symbolic parameters and controlled-call phases;
+    they must not be resynthesized with a phase-discarding numeric optimizer.
+    """
+    import numbers
+    from ..ir import NodeType
+    v = graph.vs[index]
+    attrs = v.attributes()
+    if attrs.get('type') != NodeType.op.value or attrs.get('cmp') is not None:
+        return False
+    try:
+        gate = IntermediateRepresentation.get_basis_gate(v['name'])
+    except ValueError:
+        return False
+    qs = attrs.get('qubits') or []
+    if gate.qubit_num != len(qs) or len(set(qs)) != len(qs):
+        return False
+    if arity is not None and len(qs) != arity:
+        return False
+    if not all(isinstance(p, numbers.Number) for p in (attrs.get('params') or [])):
+        return False
+    incoming = [e.attributes().get('qubit') for e in v.in_edges()]
+    outgoing = [e.attributes().get('qubit') for e in v.out_edges()]
+    return (None not in incoming and sorted(incoming) == sorted(qs)
+            and None not in outgoing and len(outgoing) == len(set(outgoing))
+            and set(outgoing) <= set(qs))

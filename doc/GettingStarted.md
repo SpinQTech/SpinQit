@@ -1,16 +1,16 @@
 # Basics
 ## Requirements
 
-- SpinQit is available on Windows, Linux and MacOS. Only the **Windows** version can use a local quantum computer as a backend. This package has been tested on Ubuntu 20.04 & 22.04 (x86_64), Windows 10 (x86_64), MacOS Ventura 13.0 (M1, M2) and MacOS Mojave 10.14.6 (x86_64).
-- SpinQit requires Python 3.8+.  This package has been tested with Python 3.8.13 and 3.9.12.
-- We suggest you use Anaconda to set up your Python environment. Please refer to [https://docs.anaconda.com/anaconda/](https://docs.anaconda.com/anaconda/) about how to install and use a conda environment. On Windows, we recommend adding Anaconda to your PATH environment viarable to avoid unnecessary troubles.
+- SpinQit is available on Windows, Linux, and macOS. This package has been tested on Ubuntu 20.04 & 22.04 (x86_64), Windows 10 & 11 (x86_64), macOS Ventura 13.0 (M1 & x86_64).
+- SpinQit requires Python 3.9, 3.10 or 3.11.  This package has been tested with Python 3.9.25, 3.10.20 and 3.11.16.
+
 ## Installation
 SpinQit can be installed using the following command:
 ```python
 pip install spinqit
 ```
 
-To build from the source on Github, you need a C/C++ compiler and CMake in addition. We do not recommend this way unless you are very familiar with the tools.
+To build from the source on GitHub, you need a C/C++ compiler and CMake in addition. We do not recommend this approach unless you are very familiar with these tools.
 ## First Example
 The following example is a simple quantum program using SpinQit Python syntax. You can run it as a Python script.
 ```python
@@ -52,12 +52,13 @@ There are three steps in a SpinQit program.
 2. Generate an intermediate representation of the program by compiling it with the appropriate compiler. 
 3. Run the code using your preferred backend. The example above uses the basic classical simulator.
 
-More details about the syntaxes, compilers and backends will be introduced in the next section.
+More details about the syntax, compilers, and backends are introduced in the next section.
+
 
 # Programming
 
 ## Syntax
-SpinQit supports three types of programming syntaxes:  native SpinQit Python syntax, [OpenQASM 2.0](https://arxiv.org/abs/1707.03429) syntax, and [IBM Qiskit](https://qiskit.org/) Python syntax. 
+SpinQit supports three programming syntaxes: native SpinQit Python syntax, [OpenQASM 2.0](https://arxiv.org/abs/1707.03429) syntax, and [IBM Qiskit](https://qiskit.org/) Python syntax.
 
 ### SpinQit Python
 
@@ -67,27 +68,56 @@ SpinQit allows users to define arbitrary quantum circuits. The basic concepts in
 
 **Quantum register**: A quantum register has a certain number of qubits, and must be allocated by a circuit using allocateQubits. A qubit is represented by the register name and its index. 
 
-**Classical register**: A classical register has a certain number of classical bits, and must be allocated by a circuit using allocateClbits. A classical bit is represented by the register name and its index. A classical bit stores a measurement result in the quantum program, which is used by following if conditions.
+**Classical register**: A classical register has a certain number of classical bits, and must be allocated by a circuit using `allocateClbits`. A classical bit is represented by the register name and its index. A classical bit stores a measurement result in the quantum program, which is used by subsequent conditional statements.
 
-**Quantum gates**: SpinQit defines 22 logic quantum gates (I, H, X, Y, Z, Rx, Ry, Rz, P, T, Td, S, Sd, CX/CNOT, CY, CZ, U, CP, SWAP, CCX, Ph, CSWAP) and two special gates (MEASURE and BARRIER). Specifically, P is the phase shift gate while Ph is the global phase gate.
+**Quantum gates**: SpinQit defines 22 logical quantum gates (I, H, X, Y, Z, Rx, Ry, Rz, P, T, Td, S, Sd, CX/CNOT, CY, CZ, U, CP, SWAP, CCX, Ph, CSWAP) and two special gates (MEASURE and BARRIER). Specifically, P is the phase-shift gate, while Ph is the global-phase gate.
 
-**Instruction**: An instruction consists of a quantum gate, qubits, optional classical bits, and optional rotation radian for rotation gates. SpinQit uses << to add an instruction to a circuit, as shown in the example earlier.
+There is a special gate named StateVector which directly initializes the qubits to a specific state, but this gate is only supported by the torch simulator backend.
 
-**Custom quantum gate**: SpinQit provides a gate builder to define a custom quantum gate. The builder builds a gate based on sub-gates. Qubit indexes and optional parameter lambda are defined for each sub-gate. For example, a custom gate can be defined as follows:
+**Instruction**: An instruction consists of a quantum gate, qubits, optional classical bits, and an optional rotation angle in radians. SpinQit uses `<<` to add an instruction to a circuit, as shown in the example earlier.
 
-```
-plam = lambda params: params[0]
+**Custom quantum gate**: SpinQit provides a gate builder to define a custom quantum gate. The builder builds a gate based on sub-gates. Qubit indices and an optional parameter lambda are defined for each sub-gate. For example, a custom gate can be defined as follows:
+
+```python
+param_lambda = lambda params: params[0]
 builder = GateBuilder(2)
 builder.append(H, [0])
 builder.append(CX, [0, 1])
-builder.append(Rx, [0], plam)
+builder.append(Rx, [0], param_lambda)
 builder.append(Rx, [0], pi)
 g = builder.to_gate()
 circ << (g, qreg, pi)
 ```
 
-**Condition based on measurements**: In SpinQit, Circuit has a measure method to measure some of the qubits and store the result into classical bits. This method inserts a special MEASURE gate into the circuit. After the measurement, a gate can be conditionally applied, and the condition is based on the value of classical bits. Such a flow control is also known as cif. A condition in SpinQit is a tuple of a list of classical bits, a comparator string ('==', '!=', '>', '>=', '<', '<='), and an integer. The | operator is used to add a condition to an instruction. The usage will be like 
+`ControlledGate` is a class that adds a control qubit to a base gate and creates a new controlled gate.
+
+```python
+cswap = ControlledGate(SWAP)
+circ << (cswap, (q[0], q[1], q[2]))
 ```
+
+**Parameter**
+
+Rotation gates and phase-shift gates take an angle in radians. This parameter can be a constant real number, or it can be a variable used in a variational quantum algorithm. A constant angle can be passed directly to a gate. To create trainable parameters, use `Circuit.add_params()` and pass the resulting parameters to the gates. Parameters can also be combined with constants or with other parameters in an expression, as shown below.
+
+```python
+circuit = Circuit()
+q=circuit.allocateQubits(qubit_num)
+weight = circuit.add_params(shape=(2,)) 
+noise = circuit.add_params(shape=(2,)) 
+
+for i in range(qubit_num):
+    circuit << (X, q[i])
+    circuit << (H, q[i])
+    circuit << (Ry, q[i], weight[0])
+    circuit << (Rz, q[i], weight[1])
+    circuit << (P, q[i], weight[0] + noise[0])
+    circuit << (P, q[i], weight[1] + noise[1])
+```
+
+
+**Conditions based on measurements**: In SpinQit, `Circuit` has a `measure` method to measure some of the qubits and store the results in classical bits. This method inserts a special MEASURE gate into the circuit. After the measurement, a gate can be applied conditionally based on the values of classical bits. Such control flow is also known as `cif`. A condition in SpinQit is a tuple containing a list of classical bits, a comparator string (`'=='`, `'!='`, `'>'`, `'>='`, `'<'`, or `'<='`), and an integer. The `|` operator is used to add a condition to an instruction. The usage is as follows:
+```python
 circ = Circuit()
 q = circ.allocateQubits(2)
 c = circ.allocateClbits(2)
@@ -97,11 +127,11 @@ circ.measure(q[0], c[0])
 circ << (H, q[1]) | (c, '==', 0)
 ```
 
-The MEASURE gate cannot be used in a custom gate or used with cif. Currently, this feature can only be executed by the basic classical simulator.
+The MEASURE gate cannot be used in a custom gate or with `cif`. Currently, this feature can only be executed by the basic classical simulator.
 
 
 ### OpenQASM 2.0
-SpinQit supports OpenQASM 2.0. The basic gates allowed in SpinQit include id, x, y, z, h, rx, ry, rz, t, tdg, s, sdg, p, cx, cy, cz, swap, ccx, u, U, CX, measure, and barrier. Other standard gates in OpenQASM can be called by including "qelib1.inc" which is provided by SpinQit and exactly the same with the library file in OpenQASM.
+SpinQit supports OpenQASM 2.0. The basic gates allowed in SpinQit include id, x, y, z, h, rx, ry, rz, t, tdg, s, sdg, p, cx, cy, cz, swap, ccx, u, U, CX, measure, and barrier. Other standard gates in OpenQASM can be called by including "qelib1.inc", which is provided by SpinQit and is exactly the same as the library file in OpenQASM.
 
 ```
 OPENQASM 2.0;
@@ -121,15 +151,29 @@ cx q[0],q[1];
 bell q[0],q[1];
 ```
 ### IBM Qiskit
-SpinQit also supports IBM Qiskit Python interface. The version SpinQit supports is qiskit-0.31.0 (qiskit-terra-0.18.3). We include the qiskit.circuit package and some related packages into SpinQit. Therefore, you can construct a Qiskit QuantumCircuit instance and run it with SpinQit, even without installing Qiskit. Particularly, SpinQit has supported QFT, QPE, and Grover primitives in Qiskit (in spinqit.qiskit.circuit.library) so that you can build up your quantum algorithms based on these primitives. Nevertheless, SpinQit does not include all the Qiskit code. If you want to use the qiskit.algorithm package and run the circuit on SpinQit backends, you still need to install Qiskit.
+SpinQit also supports the IBM Qiskit Python interface. The version supported by SpinQit is qiskit-0.31.0 (qiskit-terra-0.18.3). We include the qiskit.circuit package and some related packages in SpinQit. Therefore, you can construct a Qiskit QuantumCircuit instance and run it with SpinQit, even without installing Qiskit. In particular, SpinQit supports the QFT, QPE, and Grover primitives in Qiskit (in spinqit.qiskit.circuit.library), so you can build quantum algorithms based on these primitives. Nevertheless, SpinQit does not include all Qiskit code. If you want to use the qiskit.algorithm package and run the circuit on SpinQit backends, you still need to install Qiskit.
 
 ```python
 from spinqit.qiskit.circuit import QuantumCircuit
+from spinqit import get_compiler, get_basic_simulator, BasicSimulatorConfig
+from math import pi
+
 qc = QuantumCircuit(2)
-qc.x(0)
-qc.rx(pi, 0)
+qc.h(0)
+qc.rx(pi, 1)
 qc.cx(0, 1)
+
+compiler = get_compiler('qiskit')
+simulator = get_basic_simulator()
+config = BasicSimulatorConfig()
+
+exe = compiler.compile(qc, 0)
+result = simulator.execute(exe, config)
+print(result.states)
+print(result.counts)
 ```
+
+
 ## Compiler
 Each syntax has its corresponding compiler. The get_compiler method is used to choose the compiler. The three options are “native”, “qasm”, and “qiskit”. All the compilers have a compile method with two arguments, and the second argument is always the optimization level, but the first argument is different. 
 
@@ -159,20 +203,47 @@ SpinQit provides basic circuit optimization features. There are four optimizatio
 
 **Level 0** means no optimization algorithm is applied. 
 
-**Level 1** contains two passes and two algorithms are applied in order. The first algorithm cancels consecutive redundant gates. Certain gates can be removed when they are repeated an even number of times on the same qubit(s) without affecting the final result. The gates that satisfy this property include the Pauli-X gate (X gate), Hadamard gate (H gate), and CNOT gate (CX gate). This algorithm will remove these redundant gates from the circuit. Similarly, if a number of rotation gates rotates the same qubit around the same axis, this algorithm will combine them into one rotation gate. The second algorithm collapses more than 3 consecutive single-qubit gates on the same qubit into several basic gates. The algorithm calculates the matrix that represents the consecutive gates and decomposes the matrix to basic gates. Currently, SpinQit uses ZYZ decomposition. 
+**Level 1** consists of two passes, with two algorithms applied in order. The first algorithm cancels consecutive redundant gates. Certain gates can be removed when they are repeated an even number of times on the same qubit(s) without affecting the final result. The gates that satisfy this property include the Pauli-X gate (X gate), Hadamard gate (H gate), and CNOT gate (CX gate). This algorithm removes these redundant gates from the circuit. Similarly, if multiple rotation gates rotate the same qubit around the same axis, this algorithm combines them into one rotation gate. The second algorithm collapses more than 3 consecutive single-qubit gates on the same qubit into several basic gates. The algorithm calculates the matrix that represents the consecutive gates and decomposes the matrix into basic gates. Currently, SpinQit uses ZYZ decomposition.
 
 **Level 2** contains the two algorithms in Level 1 and then applies a third algorithm. The third algorithm collapses more than 6 consecutive two-qubit gates on the same two qubits into certain Ry, Rz, and CX gates.  The algorithm also calculates the matrix that represents the original gates and then decomposes the matrix.
 
-**Level 3** first cancels redundant gates and then applies two optimization algorithms based on quantum state analysis introduced in [https://arxiv.org/abs/2012.07711v1](https://arxiv.org/abs/2012.07711v1). The two algorithms are reported to perform better than the most aggressive optimization level in Qiskit. After the two algorithm, the collapsing single-qubit gates and collapsing two-qubit gates passes are applied.
+**Level 3** first cancels redundant gates and then applies two optimization algorithms based on quantum state analysis introduced in [https://arxiv.org/abs/2012.07711v1](https://arxiv.org/abs/2012.07711v1). The two algorithms are reported to perform better than the most aggressive optimization level in Qiskit. After the two algorithms, the collapsing single-qubit-gate and collapsing two-qubit-gate passes are applied.
 
-The optimization features in SpinQit are still experimental. More algorithms are will be added in the future. Please let us know if you find any issue.
+The optimization features in SpinQit are still experimental. More algorithms will be added in the future. Please let us know if you find any issues.
+
+### Circuit Visualization
+
+SpinQit provides a helper function to draw the intermediate representation after compilation. The output drawing shows the quantum circuit. 
+
+<dl>
+    <dt class="method-distract">
+        <span class="method-name">spinqit.view.draw</span>
+        <em class="method-param">(ir, filename, clbit_extend, decompose_level)</em>
+    </dt>
+</dl>
+
+Draw an image for the intermediate representation of a circuit and save it to a PNG file.
+
+<dl>
+    <dd>
+        <dl class="field-list simple">
+            <dt class="field-odd">Parameters</dt>
+            <dd class="field-odd"><p><strong>ir</strong> - IntermediateRepresentation, the intermediate representation of the circuit to draw</p>
+            <p><strong>filename</strong> - str, the name of the output PNG file</p>
+            <p><strong>clbit_extend</strong> - bool, False by default; show each classical bit in a row, or collapse all classical bits into one row</p>
+            <p><strong>decompose_level</strong> - int, 0 by default; for decompose_level = n > 0, recursively decompose caller gates in the IR for n levels</p>
+            </dd>
+        </dl>
+    </dd>
+</dl>
+
 
 ## Backend
-SpinQit has five different types of backends: a basic classical simulator, a simulator based on PyTorch, local quantum computers from SpinQ, the SpinQ cloud, and a QASM-based backend. 
+SpinQit has five backend types: a basic classical simulator, a PyTorch-based simulator, local quantum computers from SpinQ, a cloud backend for accessing online quantum computing resources, and a QASM-based backend.
 
 ### Basic Simulator
 
-The basic simulator is a local classical simulator based on CPU. It supports measure and cif in the quantum circuit, but does not support autograd and parallel processing. 
+The basic simulator is a CPU-based local classical simulator. It supports measurement and conditional operations in the quantum circuit, but does not support autograd or parallel processing.
 
 The code below shows how to use the basic classical simulator to run a quantum program. The configuration methods of BasicSimulatorConfig are also listed below.
 ```python
@@ -195,6 +266,9 @@ result = engine.execute(exe, config)
 |configure_shots(shots)| Configure the total number of shots so that the count of each possible binary reading is calculated in the result. |
 |configure_measure_qubits(mqubits)|Configure the subset of qubits to measure so that only the result about these qubits will be measured.|
 
+Each kind of backend in SpinQit has a get_value_and_grad_fn method that returns the evaluation result of an input quantum circuit and the corresponding grad function. This method is used by the QLayer interface of SpinQit which will be introduced later. This method has two important parameters, measure_op and grad_method, which specify the measurement in the evaluation and the type of grad function respectively.
+
+The basic SpinQ simulator backend supports two types of gradient methods, parameter shift ("param_shift") and adjoint differentiation ("adjoint_differentiation"). Both gradient methods work only with the "expval" measure operation, which means expectation value.
 
 
 ### Torch Simulator
@@ -220,6 +294,9 @@ result = engine.execute(exe, config)
 |configure_shots(shots)| Configure the total number of shots so that the count of each possible binary reading is calculated in the result. |
 |configure_measure_qubits(mqubits)|Configure the subset of qubits to measure so that only the result about these qubits will be measured. |
 |configure_num_thread(n_threads)|Configure the number of threads to run the simulation. |
+
+
+The Torch simulator backend supports two types of gradient methods, parameter shift ("param_shift") and backpropagation ("backprop"). Parameter shift can work only with the "expval" measure operation, while backpropagation supports "expval" and "state". Here, "state" refers to the state-vector result.
 
 ### Local Quantum Computer
 To use a local quantum computer from SpinQ, you first need to get the network information and register an account on the machine. Here Triangulum GUI is used as an example. For instructions on how to use other models, please contact our sales team.
@@ -254,76 +331,143 @@ result = engine.execute(exe, config)
 |configure_account(username, password)| Configure the username and password that registered on the quantum computer. |
 |configure_task(task_name, task_desc)| Configure the task name and description. |
 
+The local quantum computer backend supports only parameter shift ("param_shift"). Parameter shift works only with the "expval" measure operation.
+
 
 ### Cloud
-In order to use the SpinQ cloud, you have to first register and add a public SSH key on [https://cloud.spinq.cn.](https://cloud.spinq.cn.) Please refer to the documentation online about the SpinQ cloud [https://cloud.spinq.cn/#/docs.](https://cloud.spinq.cn/#/docs.) Username and key information are required to use the cloud backend. 
+In order to use SpinQ's online experimental platform, you have to first register and add a public SSH key on [https://cloud.spinq.com.](https://cloud.spinq.com.) Please refer to the documentation online about SpinQ's online experimental platform [https://cloud.spinq.com/#/docs.](https://cloud.spinq.com/#/docs.) Username and key information are required to use the cloud backend. The `host` argument specifies the cloud platform URL to connect to. If it is omitted, the backend connects to SpinQ's online experimental platform by default. It can also be set to the URL of a private cloud that supports SpinQit.
+
+For example, use SpinQ's online experimental platform by default as follows:
+
+```python
+backend = get_spinq_cloud(username, keyfile)
+```
+
+To connect to a compatible private cloud, provide its URL through `host`:
+
+```python
+backend = get_spinq_cloud(
+    username,
+    keyfile,
+    host="https://private-cloud.example.com",
+)
+```
 ![SSH.PNG](SSH.PNG)
-SpinQ provides multiple platforms with different number of qubits on the SpinQ cloud. The cloud backend has a get_platform method, and this method can provide a platform instance from “gemini_vp”, “triangulum_vp”, “superconductor_vp”. These platforms have 2, 3 and 8 qubits respectively and support only quantum programs with fewer qubits. The result from the cloud backend contains only a probability distribution. The data type of the result is a dictionary. The keys in the dictionary are binary measurements. The values in the dictionary are the corresponding probabilities.
+SpinQ provides multiple platforms with different numbers of qubits on SpinQ's online experimental platform. The cloud backend has a `get_platform` method, which returns a platform instance for one of `"gemini_vp"`, `"triangulum_vp"`, or `"sqc_25_vp"`. These platforms have 2, 3, and 25 qubits, respectively, and support quantum programs with up to the corresponding number of qubits.
+
+The cloud backend returns a `SpinQCloudResult` object. Its `probabilities` property contains a dictionary whose keys are binary measurement results and whose values are the corresponding probabilities. Its `counts` property contains shot counts when they are returned by the cloud platform; otherwise, counts can be derived from the probabilities and the configured number of shots. If shots are not configured, the default is 1024.
 
 
-The following example shows how to use the cloud backend and login using your SSH key.
+<dl>
+    <dt class="class-distract">
+        <em>class</em>
+        <span class="class-desc">spinqit.backend.SpinQCloudConfig</span>
+    </dt>
+</dl>
+
+|Method|Description|
+|---|---|
+|configure_shots(shots)| Configure the total number of shots so that the count of each possible binary reading is calculated in the result. |
+|configure_ip(addr)| Configure the ip address of the quantum computer. |
+|configure_port(port)| Configure the port number of the quantum computer. |
+|configure_account(username, password)| Configure the username and password that registered on the quantum computer. |
+|configure_task(task_name, task_desc)| Configure the task name and description. |
+
+
+The following example shows how to use the cloud backend and log in using your SSH key.
 
 ```python
 username = "username"
-message = username.encode(encoding="utf-8")
+keyfile = "/path/to/.ssh/id_rsa"
 
-with open("\path\to\keyfile") as f:
-    key = f.read()
+backend = get_spinq_cloud(username, keyfile)
 
-rsakey = RSA.importKey(key)
-signer = Signature_pkcs1_v1_5.new(rsakey)
-digest = SHA256.new()
-digest.update(message)
-printable = digest.hexdigest()
-sign = signer.sign(digest)
-signature = base64.b64encode(sign)
-signStr = str(signature, encoding = "utf-8")
-
-# login
-backend = get_spinq_cloud(username, signStr)
-
-# choose a platform
 gemini = backend.get_platform("gemini_vp")
-print("gemini_vp has " + str(gemini.machine_count) + " active machines.")
+print("gemini has " + str(gemini.machine_count) + " active machines.")
 
 if gemini.available():
     comp = get_compiler("native")
     circ = Circuit()
     ...
     ir = comp.compile(circ, 0)
-    newTask = backend.submit_task("gemini_vp", ir, "spinqittask1")
-    res = newTask.get_result()
+    config = SpinQCloudConfig()
+    config.configure_platform('gemini_vp')
+    config.configure_shots(1024)
+    config.configure_task('newapitest1', 'newapi')
+
+    res = backend.execute(ir, config)
 else:
     print("No machine available for this platform.")
 ```
 
+The cloud backend supports only parameter shift ("param_shift"). Parameter shift works only with the "expval" measure operation.
+
 ### QASM
 
-SpinQit can convert its intermediate representation to OpenQASM codes in the form of string so that any third-party platform which suports OpenQASM can be used to execute codes written in SpinQit. The QASM backend is initialized using a handle function which can run OpenQASM codes. The result format of this backend depends on the actual execution platform. It would be better to convert the third-party results to the result formats of SpinQit in the handle. SpinQit provides a QiskitQasmResult class to process Qiskit results. 
+SpinQit can convert its intermediate representation to OpenQASM code in string form so that any third-party platform that supports OpenQASM can execute code written in SpinQit. The QASM backend is initialized with a handle function that runs OpenQASM code. The result format of this backend depends on the actual execution platform. It is best to convert third-party results to SpinQit result formats in the handle. SpinQit provides a `QiskitQasmResult` class to process Qiskit results.
 
-The following example shows how to define a handle for the QASM backend to use Qiskit 0.31.0 to execute a quantum circuit.
+The following example shows how to define a handle for the QASM backend to use Qiskit 2.3.0 and qiskit-aer 0.17.2 to execute a quantum circuit.
 
 ```python
-from qiskit import QuantumCircuit
-from qiskit import execute
-from qiskit import Aer
-from spinqit import get_qasm_backend, QasmConfig, QiskitQasmResult
+from qiskit import qasm2, transpile
+from qiskit_aer import AerSimulator
 
-def qiskit_fn(qasm, shots=1024, *args, **kwargs):
-    qc = QuantumCircuit.from_qasm_str(qasm)
-    simulator = Aer.get_backend('statevector_simulator')
-    result = execute(qc, simulator, *args, **kwargs).result()
-    print(result.get_statevector())
-    qiskit_result = QiskitQasmResult()
-    qiskit_result.set_result(result.get_statevector(), shots)
-    return qiskit_result
+from spinqit import (
+    Circuit,
+    H,
+    CX,
+    get_compiler,
+    get_qasm_backend,
+    QasmConfig,
+    QiskitQasmResult,
+)
 
-...
 
-exe = compiler.compile(circuit, 0)
+def qiskit_function(qasm, shots=1024, *args, **kwargs):
+    qc = qasm2.loads(qasm)
+
+    print("Received OpenQASM:")
+    print(qasm)
+
+    simulator = AerSimulator(method="statevector")
+    qc.save_statevector()
+    qc = transpile(qc, simulator)
+
+    aer_result = simulator.run(qc).result()
+    statevector = aer_result.get_statevector(qc)
+
+    result = QiskitQasmResult()
+    result.set_result(
+        getattr(statevector, "data", statevector),
+        shots,
+    )
+
+    return result
+
+
+circ = Circuit()
+q = circ.allocateQubits(2)
+
+circ << (H, q[0])
+circ << (CX, (q[0], q[1]))
+
+compiler = get_compiler("native")
+exe = compiler.compile(circ, 0)
+
 config = QasmConfig()
-engine = get_qasm_backend(qiskit_fn)
-states = engine.execute(exe, config).states
+config.configure_shots(1024)
+
+engine = get_qasm_backend(qiskit_function)
+result = engine.execute(exe, config)
+
+print("Probabilities:")
+print(result.probabilities)
+
+print("State vector:")
+print(result.states)
+
+print("Counts:")
+print(result.counts)
 ```
 
 
@@ -341,6 +485,7 @@ states = engine.execute(exe, config).states
 |configure_shots(shots)| Configure the total number of shots so that the count of each possible binary reading is calculated in the result. |
 |configure_measure_qubits(mqubits)|Configure the subset of qubits to measure so that only the result about these qubits will be measured.|
 
+This QASM backend supports parameter shift ("param_shift"). It also supports adjoint differentiation ("adjoint_differentiation") if the external QASM engine can return the state vector. Both gradient methods work only with the "expval" measure operation.
 
 
 ## Result
@@ -349,19 +494,19 @@ SpinQit provides four types of results. First, all the backends can provide the 
 print(result.probabilities)
 {'10': 0.4999999999809753, '11': 0.4999999999809753}
 ```
-Please notice that SpinQit uses the little endian, i.e., the first bit in the result binary string corresponds to the first qubit in the quantum circuit. 
+Note that SpinQit uses little-endian ordering; that is, the first bit in the result binary string corresponds to the first qubit in the quantum circuit.
 
-Second,  the count of each possible binary reading can be found in the result except when the cloud backend is used. The total number of shots is configured otherwise 1024 will be used by default. 
+Second, counts for each possible binary reading can be found in the result. The total number of shots is configurable; if it is not specified, the default is 1024.
 ```
 print(result.counts)
 {'10': 512, '11': 512}
 ```
-Third, with the simulators, a random binary reading can be obtained from the result according to the probabilities via a get_random_reading method. 
+Third, with the simulators, a random binary reading can be obtained from the result according to the probabilities via `get_random_reading()`.
 ```
 print(result.get_random_reading())
 11
 ```
-Fourth, the two simulator backends can provide the state vector of all the qubits when there is no measure gate or conditional gate based on the value of a classical register.
+Fourth, the two simulator backends can provide the state vector of all the qubits when the circuit contains no measurement gate or conditional gate based on the value of a classical register.
 ```
 print(result.states)
 [(1.37812710729329e-10+0j), (1.37812710729329e-10+0j), -0.7071067811865476j, -0.7071067811865476j]
@@ -369,17 +514,96 @@ print(result.states)
 
 The following table shows the result formats supported by each backend.
 
-||Basic Simulator|Torch Simulator|Local Quantum Computer|Cloud|QASM Backend|
+|Result|Basic Simulator|Torch Simulator|Local Quantum Computer|Cloud|QASM Backend|
 |---|---|---|---|---|---|
 |Probabilities|Y|Y|Y|Y|Y|
-|Counts|Y|Y|Y|N|Y|
+|Counts|Y|Y|Y|Y|Y|
 |States|Y|Y|N|N|Y|
 |Random Reading|Y|Y|N|N|Y|
 
 
+## QLayer Interface
+SpinQit provides an abstract interface named QLayer to simplify the implementation of variational quantum algorithms and quantum machine learning algorithms. QLayer encapsulates the backend, backend configuration, measurement operation, gradient function, and related components. QLayer can be defined via a decorator named `to_qlayer`. Developers use this decorator to wrap any function that returns a Circuit. With the `to_qlayer` decorator, the final result is the measurement result of the quantum circuit produced by the wrapped function and evaluated on the selected backend. QLayer can also work with the optimizers in SpinQit and interfaces for classical machine learning frameworks. These optimizers and frameworks call the gradient function specified in QLayer for gradient-based optimization. The following example shows how to use the `to_qlayer` decorator.
+
+```python
+from spinqit.interface import to_qlayer
+from spinqit.algorithm.loss import expval
+op = expval(generate_hamiltonian_matrix([('ZI', 1)]))
+@to_qlayer(backend_mode='spinq', grad_method='param_shift', measure=op, interface='torch')
+def build_circuit(weights_shape, qubit_num):
+    circ = Circuit()
+    weight = circ.add_params(shape=weights_shape) 
+    q = circ.allocateQubits(qubit_num)
+    ...
+    return circ
+```
+
+More configuration information can be provided via `to_qlayer`:
+
+```python
+@to_qlayer(backend_mode='nmr', grad_method='param_shift', measure=expval(hamiltonian), interface='spinq', ip='192.168.8.176', port=55444, account=("user9", "123456"), shots=1024, task_name='nmrgradtest1', task_desc='nmr grad test')
+```
+
+The main parameters include:
+
+<dl>
+    <dd>
+        <dl class="field-list simple">
+            <dt class="field-odd">backend_mode</dt>
+            <dd class="field-odd"> The backend to execute the circuit, and the current options are 'spinq', 'torch', 'cloud', and 'nmr' </dd>            
+            <dt class="field-even">measure</dt>
+            <dd class="field-even">This parameter must be a function creating a measurement operation. There are four types of measurement operations: states(), probs(mqubits=None), counts(shots=None, mqubits=None) and expval(hamiltonian). Here expval means the expectation value of a Hamiltonian, and the parameter hamiltonian is a scipy.sparse.csr_matrix or a list of (Pauli string, coefficient) pairs.</dd>
+            <dt class="field-odd">interface</dt>
+            <dd class="field-odd">There are four available interfaces: 'torch', 'tf', 'paddle', and 'spinq'. To avoid unnecessary data-type conversions, SpinQit provides interfaces that work with classical machine learning frameworks such as PyTorch, TensorFlow, and PaddlePaddle.</dd>
+            <dt class="field-even">grad_method</dt>
+            <dd class="field-even">Each backend supports one or more gradient functions. All the backends support 'param_shift'. In addition, 'torch' supports 'backprop' and 'spinq' supports 'adjoint_differentiation'.</dd>
+        </dl>
+    </dd>
+</dl>
+
+The following table summarizes the gradient methods and measure operations supported by each kind of backend in QLayer.
+
+
+<table>
+<tr>
+<td>Backend Mode</td>
+<td>Grad Method</td>
+<td>MeasureOp</td>
+</tr>
+<tr>
+<td rowspan=2>spinq</td>
+<td>param_shift</td>
+<td>expval</td>
+</tr>
+<tr>
+<td>adjoint_differentiation</td>
+<td>expval</td>
+</tr>
+<tr>
+<td rowspan=2>torch</td>
+<td>param_shift</td>
+<td>expval</td>
+</tr>
+<tr>
+<td>backprop</td>
+<td>expval, state</td>
+</tr>
+<tr>
+<td>cloud</td>
+<td>param_shift</td>
+<td>expval</td>
+</tr>
+<tr>
+<td>nmr</td>
+<td>param_shift</td>
+<td>expval</td>
+</tr>
+</table>
+
+
 ## Library
 
-SpinQit provides useful APIs for developers to use in their own quantum programs. Users can define custom quantum gates, build new quantum algorithms, and invoke existing algorithms. This section introduces the APIs in SpinQit.
+SpinQit provides useful APIs for developers to use in their own quantum programs. Users can define custom quantum gates, build new quantum algorithms, and invoke existing algorithms. This section introduces SpinQit's APIs.
 
 ### GateBuilders
 
@@ -407,10 +631,10 @@ A gate builder is used to define a custom gate. The developer needs to call the 
                     <dt class="field-odd">Parameters</dt>
                     <dd class="field-odd"><p><strong>g</strong> – Gate, the gate to repeat</p>
                     <p><strong>repeat</strong> – int, how many qubits to apply g</p>
-                    <p><strong>param_lambda</strong> - float or Callable, optional parameters of gate, and None by default</p>
+                    <p><strong>param_lambda</strong> - float or Callable, optional gate parameters; None by default</p>
                     </dd>
                     <dt class="field-even">Returns</dt>
-                    <dd class="field-even"><p>A GateBuilder instance </p>
+                    <dd class="field-even"><p>A RepeatBuilder instance</p>
                     </dd>
                     <dt class="field-odd">Example</dt>
                     <dd class="field-odd"><p>h4 = RepeatBuilder(H, 4).to_gate() </p>
@@ -437,10 +661,10 @@ A gate builder is used to define a custom gate. The developer needs to call the 
         </dl>
         <dl>
             <dd>
-                <p>Create a InverseBuilder instance.</p>
+                <p>Create an InverseBuilder instance.</p>
                 <dl class="field-list simple">
                     <dt class="field-odd">Parameters</dt>
-                    <dd class="field-odd"><p><strong>gate</strong> – Gate, the gate to inverse</p>
+                    <dd class="field-odd"><p><strong>gate</strong> – Gate, the gate to invert</p>
                     </dd>
                     <dt class="field-even">Returns</dt>
                     <dd class="field-even"><p>A GateBuilder instance </p>
@@ -474,7 +698,7 @@ A gate builder is used to define a custom gate. The developer needs to call the 
                 <p>Create a MultiControlPhaseGateBuilder instance.</p>
                 <dl class="field-list simple">
                     <dt class="field-odd">Parameters</dt>
-                    <dd class="field-odd"><p><strong>ctrl_qubit_num</strong> – int, the number of control qubits. Please notice that the total number of qubits for the generated gate is the number of control qubits plus one.</p>
+                    <dd class="field-odd"><p><strong>ctrl_qubit_num</strong> – int, the number of control qubits. Note that the total number of qubits for the generated gate is the number of control qubits plus one.</p>
                     </dd>
                     <dt class="field-even">Returns</dt>
                     <dd class="field-even"><p>A GateBuilder instance </p>
@@ -495,7 +719,7 @@ A gate builder is used to define a custom gate. The developer needs to call the 
         <span class="class-desc">spinqit.model.Z_IsingGateBuilder</span>
     </dt>
     <dd>
-        <p>Build a Z-basis parameteric Ising coupling gate.</p>
+        <p>Build a Z-basis parametric Ising coupling gate.</p>
         <p><b>Methods</b></p>
         <dl>
             <dt class="method-distract">
@@ -508,7 +732,7 @@ A gate builder is used to define a custom gate. The developer needs to call the 
                 <p>Create a Z_IsingGateBuilder instance.</p>
                 <dl class="field-list simple">
                     <dt class="field-odd">Parameters</dt>
-                    <dd class="field-odd"><p><strong>qubit_num</strong> – int, the number of qubits interacted</p>
+                    <dd class="field-odd"><p><strong>qubit_num</strong> – int, the number of qubits on which the gate acts</p>
                     <p><strong>name</strong> - str, name of the gate, 'Z_Ising' by default</p>
                     </dd>
                     <dt class="field-even">Returns</dt>
@@ -529,7 +753,7 @@ A gate builder is used to define a custom gate. The developer needs to call the 
         <span class="class-desc">spinqit.model.X_IsingGateBuilder</span>
     </dt>
     <dd>
-        <p>Build a X-basis parameteric Ising coupling gate.</p>
+        <p>Build an X-basis parametric Ising coupling gate.</p>
         <p><b>Methods</b></p>
         <dl>
             <dt class="method-distract">
@@ -542,7 +766,7 @@ A gate builder is used to define a custom gate. The developer needs to call the 
                 <p>Create a X_IsingGateBuilder instance.</p>
                 <dl class="field-list simple">
                     <dt class="field-odd">Parameters</dt>
-                    <dd class="field-odd"><p><strong>qubit_num</strong> – int, the number of qubits interacted</p>
+                    <dd class="field-odd"><p><strong>qubit_num</strong> – int, the number of qubits on which the gate acts</p>
                     <p><strong>name</strong> - str, name of the gate, 'X_Ising' by default</p>
                     </dd>
                     <dt class="field-even">Returns</dt>
@@ -563,7 +787,7 @@ A gate builder is used to define a custom gate. The developer needs to call the 
         <span class="class-desc">spinqit.model.Y_IsingGateBuilder</span>
     </dt>
     <dd>
-        <p>Build a Y-basis parameteric Ising coupling gate.</p>
+        <p>Build a Y-basis parametric Ising coupling gate.</p>
         <p><b>Methods</b></p>
         <dl>
             <dt class="method-distract">
@@ -576,7 +800,7 @@ A gate builder is used to define a custom gate. The developer needs to call the 
                 <p>Create a Y_IsingGateBuilder instance.</p>
                 <dl class="field-list simple">
                     <dt class="field-odd">Parameters</dt>
-                    <dd class="field-odd"><p><strong>qubit_num</strong> – int, the number of qubits interacted</p>
+                    <dd class="field-odd"><p><strong>qubit_num</strong> – int, the number of qubits on which the gate acts</p>
                     <p><strong>name</strong> - str, name of the gate, 'Y_Ising' by default</p>
                     </dd>
                     <dt class="field-even">Returns</dt>
@@ -611,7 +835,7 @@ A gate builder is used to define a custom gate. The developer needs to call the 
                 <dl class="field-list simple">
                     <dt class="field-odd">Parameters</dt>
                     <dd class="field-odd"><p><strong>ctrl_num</strong> – int, the number of control qubits</p>
-                    <p><strong>gate</strong> - Gate, numpy.ndarray, or list, the single-qubit gate applied on the target qubit which could be a Gate instance in SpinQit or a unitary matrix of ndarray or list type </p>
+                    <p><strong>gate</strong> - Gate, numpy.ndarray, or list, the single-qubit gate applied to the target qubit; it can be a Gate instance in SpinQit or a unitary matrix represented by an ndarray or list</p>
                     <p><strong>params</strong> – List, the parameters for the Gate instance, None by default</p>
                     </dd>
                     <dt class="field-even">Returns</dt>
@@ -646,9 +870,9 @@ A gate builder is used to define a custom gate. The developer needs to call the 
                 <dl class="field-list simple">
                     <dt class="field-odd">Parameters</dt>
                     <dd class="field-odd"><p><strong>ctrl_num</strong> – int, the number of control qubits</p>
-                    <p><strong>gate</strong> - Gate, numpy.ndarray, or list, the single-qubit gate applied on the target qubit which could be a Gate instance in SpinQit or a unitary matrix of ndarray or list type </p>
+                    <p><strong>gate</strong> - Gate, numpy.ndarray, or list, the single-qubit gate applied to the target qubit; it can be a Gate instance in SpinQit or a unitary matrix represented by an ndarray or list</p>
                     <p><strong>params</strong> – List, the parameters for the Gate instance, None by default</p>
-                    <p><strong>up_to_diag</strong> – bool, whether to implement the uniformly controlled gate up to diagnoal gates, False by default</p>
+                    <p><strong>up_to_diag</strong> – bool, whether to implement the uniformly controlled gate up to diagonal gates; False by default</p>
                     <p><strong>add_phase</strong> – bool, whether to add the global phase, True by default</p>
                     </dd>
                     <dt class="field-even">Returns</dt>
@@ -688,7 +912,7 @@ Generates the instructions that represent the power of a given gate. The power o
             <p><strong>qubits</strong> - List,  where to apply the power of gate</p>
             <p><strong>params</strong> - List, optional parameters of gate, and the default value is []</p>
             <p><strong>control</strong> - bool,  whether to generate the controlled power gate, and the default value is False</p>
-            <p><strong>control_bit</strong> - int, the control qubit, by default it is None</p>
+            <p><strong>control_bit</strong> - int, the control qubit; defaults to None</p>
             </dd>
             <dt class="field-even">Returns</dt>
             <dd class="field-even"><p>The instructions that represent the power of a given gate. </p>
@@ -847,538 +1071,7 @@ Generates the instructions that represent the power of a given gate. The power o
                 </dl>
             </dd>
         </dl>
-        <dl>
-            <dt class="method-distract">
-                <span class="method-name">build</span>
-                <em class="method-param">( )</em>
-            </dt>
-        </dl>
-        <dl>
-            <dd>
-                <p>Generate instructions for QPE.</p>
-                <dl class="field-list simple">
-                    <dt class="field-even">Returns</dt>
-                    <dd class="field-even"><p>Instructions to do quantum phase estimation</p>
-                    </dd>
-                </dl>
-            </dd>
-        </dl>
-        <dl>
-            <dt class="method-distract">
-                <span class="method-name">inverse</span>
-                <em class="method-param">( )</em>
-            </dt>
-        </dl>
-        <dl>
-            <dd>
-                <p>Generate instructions for inverse QPE.</p>
-                <dl class="field-list simple">
-                    <dt class="field-even">Returns</dt>
-                    <dd class="field-even"><p>Instructions to do inverse quantum phase estimation</p>
-                    </dd>
-                </dl>
-            </dd>
-        </dl>
-    </dd>
-</dl>
-
-
-
-<dl>
-    <dt class="class-distract">
-        <em>class</em>
-        <span class="class-desc">spinqit.primitive.AmplitudeEstimation</span>
-    </dt>
-    <dd>
-        <p>Given an operator U that U|0> = &radic;1-a |&Psi;<sub>0</sub>> + &radic;a |&Psi;<sub>1</sub>>, Generates instructions that estimate the amplitude a of the state |&Psi;<sub>1</sub>>.</p>
-        <p><b>Methods</b></p>
-        <dl>
-            <dt class="method-distract">
-                <span class="method-name">__init__</span>
-                <em class="method-param">(counting_num, searching_num, prep, oracle, prep_params, oracle_params)</em>
-            </dt>
-        </dl>
-        <dl>
-            <dd>
-                <p>Create an AmplitudeEstimation instance.</p>
-                <dl class="field-list simple">
-                    <dt class="field-odd">Parameters</dt>
-                    <dd class="field-odd"><p><strong>counting_num</strong> - int, the number of qubits to read out the estimation</p>
-                    <p><strong>searching_num</strong> - int, the number of qubits to apply the oracle</p>
-                    <p><strong>prep</strong> - Gate, the gate to prepare the states</p>
-                    <p><strong>oracle</strong> - Gate, the gate to </p>
-                    <p><strong>prep_params</strong> - List, [] by default, the optional parameters in the prep gate </p>
-                    <p><strong>oracle_params</strong> - List, [] by default, the optional parameters in the oracle gate </p>
-                    </dd>
-                    <dt class="field-even">Returns</dt>
-                    <dd class="field-even"><p>A PhaseEstimation instance</p>
-                    </dd>
-                </dl>
-            </dd>
-        </dl>
-        <dl>
-            <dt class="method-distract">
-                <span class="method-name">build</span>
-                <em class="method-param">( )</em>
-            </dt>
-        </dl>
-        <dl>
-            <dd>
-                <p>Generate instructions for QAE.</p>
-                <dl class="field-list simple">
-                    <dt class="field-even">Returns</dt>
-                    <dd class="field-even"><p>Instructions to do quantum amplitude estimation</p>
-                    </dd>
-                </dl>
-            </dd>
-        </dl>
-    </dd>
-</dl>
-
-
-
-### Algorithms
-
-SpinQit provides APIs for multiple quantum algorithms so that users can run them directly. We provide example codes to show how to use these APIs.
-
-
-<dl>
-    <dt class="class-distract">
-        <em>class</em>
-        <span class="class-desc">spinqit.algorithm.HHL</span>
-    </dt>
-    <dd>
-        <p> Harrow-Hassidim-Lloyd (HHL) quantum algorithm is used to solve a system of linear equations.</p>
-        <p><b>Methods</b></p>
-        <dl>
-            <dt class="method-distract">
-                <span class="method-name">__init__</span>
-                <em class="method-param">(mat_A, vec_b)</em>
-            </dt>
-        </dl>
-        <dl>
-            <dd>
-                <p>Initialize an HHL solver.</p>
-                <dl class="field-list simple">
-                    <dt class="field-odd">Parameters</dt>
-                    <dd class="field-odd"><p><strong>mat_A</strong> - np.ndarray, the coefficient matrix</p>
-                    <p><strong>vec_b</strong> - np.ndarray, the right side constant vector</p>
-                    </dd>
-                    <dt class="field-even">Returns</dt>
-                    <dd class="field-even"><p>An HHL instance for a specific system of linear equations</p>
-                    </dd>
-                </dl>
-            </dd>
-        </dl>
-        <dl>
-            <dt class="method-distract">
-                <span class="method-name">run</span>
-                <em class="method-param">(backend, config)</em>
-            </dt>
-        </dl>
-        <dl>
-            <dd>
-                <p>Run the solver.</p>
-                <dl class="field-list simple">
-                    <dt class="field-odd">Parameters</dt>
-                    <dd class="field-odd"><p><strong>backend</strong> - BaseBackend, the backend instance to execute the algorithm</p>
-                    <p><strong>config</strong> - Config, the configuration for the backend</p>
-                    </dd>
-                    <dt class="field-even">Returns</dt>
-                    <dd class="field-even"><p>None</p>
-                    </dd>
-                     <dt class="field-odd">Example</dt>
-                    <dd class="field-odd"><p>We provide an example of HHL in example/hhl_example.py </p>
-                    </dd>
-                </dl>
-            </dd>
-        </dl>
-        <dl>
-            <dt class="method-distract">
-                <span class="method-name">get_measurements</span>
-                <em class="method-param">( )</em>
-            </dt>
-        </dl>
-        <dl>
-            <dd>
-                <p>Get the probabilities after running the solver.</p>
-                <dl class="field-list simple">
-                    <dt class="field-even">Returns</dt>
-                    <dd class="field-even"><p>A dictionary of the probabilities of different measurements from the solver</p>
-                    </dd>
-                </dl>
-            </dd>
-        </dl>
-        <dl>
-            <dt class="method-distract">
-                <span class="method-name">get_state</span>
-                <em class="method-param">( )</em>
-            </dt>
-        </dl>
-        <dl>
-            <dd>
-                <p>Get the state vector after running the solver, working only with simulator backends.</p>
-                <dl class="field-list simple">
-                    <dt class="field-even">Returns</dt>
-                    <dd class="field-even"><p>A dictionary of the probabilities of different measurements from the solver</p>
-                    </dd>
-                </dl>
-            </dd>
-        </dl>
-    </dd>
-</dl>
-
-
-<dl>
-    <dt class="class-distract">
-        <em>class</em>
-        <span class="class-desc">spinqit.algorithm.VQE</span>
-    </dt>
-    <dd>
-        <p> VQE is short for variational quantum eigensolver, which finds the minimum eigenvalue of a Hermitian matrix H. VQE uses a parameterized ansatz to implement the variational principle. When H describes the Hamiltonian of a system, VQE can obtain the ground state energy of the Hamiltonian.</p>
-        <p><b>Methods</b></p>
-        <dl>
-            <dt class="method-distract">
-                <span class="method-name">__init__</span>
-                <em class="method-param">(qubit_num, depth, hamiltonian, ansatz, optimizer)</em>
-            </dt>
-        </dl>
-        <dl>
-            <dd>
-                <p>Initialize a VQE solver.</p>
-                <dl class="field-list simple">
-                    <dt class="field-odd">Parameters</dt>
-                    <dd class="field-odd"><p><strong>qubit_num</strong> - int, the qubit number in the ansatz</p>
-                    <p><strong>depth</strong> - int, how many times to repeat the ansatz circuit</p>
-                    <p><strong>hamiltonian</strong> - scipy.sparse.csr_matrix or List, the input Hamiltonian which can be a matrix or described by its Pauli decomposition, i.e., a list of (Pauli string, coefficient) pairs</p>
-                    <p><strong>ansatz</strong> - Circuit, the ansatz circuit, and a hardware efficient ansatz is used when this parameter is None</p>
-                    <p><strong>optimizer</strong> - Optimizer, the optimizer used to optimize the variational parameters</p>
-                    </dd>
-                    <dt class="field-even">Returns</dt>
-                    <dd class="field-even"><p>A VQE instance</p>
-                    </dd>
-                </dl>
-            </dd>
-        </dl>
-        <dl>
-            <dt class="method-distract">
-                <span class="method-name">run</span>
-                <em class="method-param">(mode, grad_method)</em>
-            </dt>
-        </dl>
-        <dl>
-            <dd>
-                <p>Run the solver.</p>
-                <dl class="field-list simple">
-                    <dt class="field-odd">Parameters</dt>
-                    <dd class="field-odd"><p><strong>mode</strong> - str, the backend mode, 'spinq' or 'torch', corresponding to the basic simulator and the pytorch simulator respectively</p>
-                    <p><strong>grad_method</strong> - str, the method to calculate the gradients, 'param_shift' and 'adjoint_differentiation' for the 'spinq' mode and 'backprop' for the 'torch' mode</p>
-                    </dd>
-                    <dt class="field-even">Returns</dt>
-                    <dd class="field-even"><p>A list of loss values</p>
-                    </dd>
-                     <dt class="field-odd">Example</dt>
-                    <dd class="field-odd"><p>We provide an example of VQE in example/vqe_h2_example.py </p>
-                    </dd>
-                </dl>
-            </dd>
-        </dl>
-    </dd>
-</dl>
-
-
-<dl>
-    <dt class="class-distract">
-        <em>class</em>
-        <span class="class-desc">spinqit.algorithm.QAOA</span>
-    </dt>
-    <dd>
-        <p> Quantum Approximate Optimization Algorithm (QAOA) is a variational algorithm to solve combinatorial optimization problems. </p>
-        <p><b>Methods</b></p>
-        <dl>
-            <dt class="method-distract">
-                <span class="method-name">__init__</span>
-                <em class="method-param">(qubit_num, depth, problem, mixer, optimizer)</em>
-            </dt>
-        </dl>
-        <dl>
-            <dd>
-                <p>Initialize a QAOA solver.</p>
-                <dl class="field-list simple">
-                    <dt class="field-odd">Parameters</dt>
-                    <dd class="field-odd"><p><strong>qubit_num</strong> - int, the qubit number in the ansatz</p>
-                    <p><strong>depth</strong> - int, how many times to repeat the problem ansatz and the mixer ansatz</p>
-                    <p><strong>hamiltonian</strong> - scipy.sparse.csr_matrix or List or Circuit, the problem Hamiltonian which can be a matrix, or described by its Pauli decomposition, i.e., a list of (Pauli string, coefficient) pairs, or a parameterized quantum circuit</p>
-                    <p><strong>mixer</strong> - Circuit, the mixer circuit, and a default Rx ansatz is used when this parameter is None</p>
-                    <p><strong>optimizer</strong> - Optimizer, the optimizer used to optimize the variational parameters</p>
-                    </dd>
-                    <dt class="field-even">Returns</dt>
-                    <dd class="field-even"><p>A QAOA instance</p>
-                    </dd>
-                </dl>
-            </dd>
-        </dl>
-        <dl>
-            <dt class="method-distract">
-                <span class="method-name">run</span>
-                <em class="method-param">(mode, grad_method)</em>
-            </dt>
-        </dl>
-        <dl>
-            <dd>
-                <p>Run the solver.</p>
-                <dl class="field-list simple">
-                    <dt class="field-odd">Parameters</dt>
-                    <dd class="field-odd"><p><strong>mode</strong> - str, the backend mode, 'spinq' or 'torch', corresponding to the basic simulator and the pytorch simulator respectively</p>
-                    <p><strong>grad_method</strong> - str, the method to calculate the gradients, 'param_shift' and 'adjoint_differentiation' for the 'spinq' mode and 'backprop' for the 'torch' mode</p>
-                    </dd>
-                    <dt class="field-even">Returns</dt>
-                    <dd class="field-even"><p>A list of loss values</p>
-                    </dd>
-                     <dt class="field-odd">Example</dt>
-                    <dd class="field-odd"><p>We provide an example of QAOA in example/qaoa_maxcut_example.py </p>
-                    </dd>
-                </dl>
-            </dd>
-        </dl>
-        <dl>
-            <dt class="method-distract">
-                <span class="method-name">get_measurements</span>
-                <em class="method-param">(backend, config)</em>
-            </dt>
-        </dl>
-        <dl>
-            <dd>
-                <p>Get the measurements of the final circuit.</p>
-                <dl class="field-list simple">
-                    <dt class="field-odd">Parameters</dt>
-                    <dd class="field-odd"><p><strong>backend</strong> - BaseBackend, the backend instance to execute the algorithm </p>
-                    <p><strong>config</strong> - Config, the configuration for the backend</p>
-                    </dd>
-                    <dt class="field-even">Returns</dt>
-                    <dd class="field-even"><p>Result of the execution</p>
-                    </dd>
-                </dl>
-            </dd>
-        </dl>
-    </dd>
-</dl>
-
-
-<dl>
-    <dt class="class-distract">
-        <em>class</em>
-        <span class="class-desc">spinqit.algorithm.QuantumCounting</span>
-    </dt>
-    <dd>
-        <p> The Grover algorithm is designed to find a solution to an oracle function, while the quantum counting algorithm finds out how many of these solutions there are. This algorithm is a quantum phase estimation of the Grover operator. </p>
-        <p><b>Methods</b></p>
-        <dl>
-            <dt class="method-distract">
-                <span class="method-name">__init__</span>
-                <em class="method-param">(counting_num, searching_num, prep, oracle, prep_params, oracle_params)</em>
-            </dt>
-        </dl>
-        <dl>
-            <dd>
-                <p>Initialize a QuantumCounting instance for a specific problem.</p>
-                <dl class="field-list simple">
-                    <dt class="field-odd">Parameters</dt>
-                    <dd class="field-odd"><p><strong>counting_num</strong> - int, the number of qubits to read out the count </p>
-                    <p><strong>searching_num</strong> - int, the number of qubits to apply the oracle</p>
-                    <p><strong>prep</strong> - Gate, the gate to prepare the states</p>
-                    <p><strong>oracle</strong> - Gate, the oracle to count</p>
-                    <p><strong>prep_params</strong> - List, [] by default, the optional parameters in the prep gate</p>
-                    <p><strong>oracle_params</strong> - List, [] by default, the optional parameters in the oracle gate</p>
-                    </dd>
-                    <dt class="field-even">Returns</dt>
-                    <dd class="field-even"><p>A QuantumCounting instance</p>
-                    </dd>
-                </dl>
-            </dd>
-        </dl>
-        <dl>
-            <dt class="method-distract">
-                <span class="method-name">run</span>
-                <em class="method-param">(backend, config)</em>
-            </dt>
-        </dl>
-        <dl>
-            <dd>
-                <p>Solve the quantum counting problem.</p>
-                <dl class="field-list simple">
-                    <dt class="field-odd">Parameters</dt>
-                    <dd class="field-odd"><p><strong>backend</strong> - BaseBackend, the backend instance to execute the algorithm</p>
-                    <p><strong>config</strong> - Config, the configuration for the backend</p>
-                    </dd>
-                    <dt class="field-even">Returns</dt>
-                    <dd class="field-even"><p>The count of targets</p>
-                    </dd>
-                     <dt class="field-odd">Example</dt>
-                    <dd class="field-odd"><p>We provide an example of quantum counting in example/quantum_counting_example.py </p>
-                    </dd>
-                </dl>
-            </dd>
-        </dl>
-    </dd>
-</dl>
-
-
-
-<dl>
-    <dt class="class-distract">
-        <em>class</em>
-        <span class="class-desc">spinqit.algorithm.QSearching</span>
-    </dt>
-    <dd>
-        <p> The QSearching algorithm searches for the index of the maximum or minimum value in an array. </p>
-        <p><b>Methods</b></p>
-        <dl>
-            <dt class="method-distract">
-                <span class="method-name">__init__</span>
-                <em class="method-param">(find, backend, config, seed)</em>
-            </dt>
-        </dl>
-        <dl>
-            <dd>
-                <p>Initialize a QSearching instance.</p>
-                <dl class="field-list simple">
-                    <dt class="field-odd">Parameters</dt>
-                    <dd class="field-odd"><p><strong>find</strong> - str, 'max' or 'min' </p>
-                   <p><strong>backend</strong> - BaseBackend, the backend instance to execute the algorithm</p>
-                    <p><strong>config</strong> - Config, the configuration for the backend</p>
-                    <p><strong>seed</strong> - None, int, float, str, bytes or bytearray, the random seed used in the algorithm </p>
-                    </dd>
-                    <dt class="field-even">Returns</dt>
-                    <dd class="field-even"><p>A QSearching instance</p>
-                    </dd>
-                </dl>
-            </dd>
-        </dl>
-        <dl>
-            <dt class="method-distract">
-                <span class="method-name">search</span>
-                <em class="method-param">(dataset)</em>
-            </dt>
-        </dl>
-        <dl>
-            <dd>
-                <p>Search for the max or min value in the dataset.</p>
-                <dl class="field-list simple">
-                    <dt class="field-odd">Parameters</dt>
-                    <dd class="field-odd"><p><strong>dataset</strong> - arraylike, the input array to search</p>
-                    </dd>
-                    <dt class="field-even">Returns</dt>
-                    <dd class="field-even"><p>The index of the max or min value</p>
-                    </dd>
-                     <dt class="field-odd">Example</dt>
-                    <dd class="field-odd"><p>We provide an example of quantum counting in example/search_max_min.py </p>
-                    </dd>
-                </dl>
-            </dd>
-        </dl>
-    </dd>
-</dl>
-
-
-### Quantum Machine Learning
-
-
-SpinQit supports quantum machine learning by providing quantum encoding methods and optimizer interfaces. In addition, SpinQit provides interfaces to integrates with classical machine learning frameworks to conduct hybrid quantum-classical machine learning. An example shows how to implement a quantum classifier using SpinQit and PyTorch in example/qnn_example.py.
-
-#### Encoding
-
-Currently, there are three off-the-shelf encoding functions which convert classical information into quantum states or operations. These encoding functions can be used for quantum feature maps. Users can also define their own encoding circuit.
-
-
-<dl>
-    <dt class="method-distract">
-        <span class="method-name">spinqit.primitive.amplitude_encoding</span>
-        <em class="method-param">(vector, qubits)</em>
-    </dt>
-</dl>
-
-Encodes classical information into amplitudes of quantum states. The amplitude of each quantum state is associated with a specific classical value in the input vector. The normalized state vector is equal to the normalized input vector.
-
-<dl>
-    <dd>
-        <dl class="field-list simple">
-            <dt class="field-odd">Parameters</dt>
-            <dd class="field-odd"><p><strong>vector</strong> – np.ndarray, the input classical vector</p>
-            <p><strong>qubits</strong> - List, the qubits to encode the input vector</p>
-            </dd>
-            <dt class="field-even">Returns</dt>
-            <dd class="field-even"><p>The instructions prepare quantum states to encode the given vector. </p>
-            </dd>
-        </dl>
-    </dd>
-</dl>
-
-
-
-
-<dl>
-    <dt class="method-distract">
-        <span class="method-name">spinqit.primitive.angle_encoding</span>
-        <em class="method-param">(vector, qubits, rotate_gate)</em>
-    </dt>
-</dl>
-
-Encodes classical information into parameters of rotation gates. 
-
-<dl>
-    <dd>
-        <dl class="field-list simple">
-            <dt class="field-odd">Parameters</dt>
-            <dd class="field-odd"><p><strong>vector</strong> – np.ndarray, the input classical vector</p>
-            <p><strong>qubits</strong> - List, the qubits to encode the input vector</p>
-            <p><strong>rotate_gate</strong> - str, the rotation gate 'rx', 'ry' or 'rz' to use, 'ry' by default </p>
-            </dd>
-            <dt class="field-even">Returns</dt>
-            <dd class="field-even"><p>The instructions for the rotation gates. </p>
-            </dd>
-        </dl>
-    </dd>
-</dl>
-
-
-
-<dl>
-    <dt class="method-distract">
-        <span class="method-name">spinqit.primitive.iqp_encoding</span>
-        <em class="method-param">(vector, qubits, depth, ring_pattern)</em>
-    </dt>
-</dl>
-
-Encodes classical information $x$ into $(U_Z(x)H^{\otimes n})^d \vert 0^n\rangle$. Please refer to Havlíček, Vojtěch, et al. "Supervised learning with quantum-enhanced feature spaces." for details.
-
-<dl>
-    <dd>
-        <dl class="field-list simple">
-            <dt class="field-odd">Parameters</dt>
-            <dd class="field-odd"><p><strong>vector</strong> – np.ndarray, the input classical vector</p>
-            <p><strong>qubits</strong> - List, the qubits to encode the input vector</p>
-            <p><strong>depth</strong> - int, 1 by default, how many times to repeat the basic IQP circuit
-            <p><strong>ring_pattern</strong> - bool, False by default, whether to apply a rzz gate to the first and last qubits
-            </dd>
-            <dt class="field-even">Returns</dt>
-            <dd class="field-even"><p>The instructions for the instantaneous quantum polynomial circuit. </p>
-            </dd>
-        </dl>
-    </dd>
-</dl>
-    
-
-
-
-
-
-#### Optimizer
-
-SpinQit has three native optimizers and three interfaces to use optimizers from SciPy, PyTorch and Noisyopt.
-
-
-<dl>
+        <dl>…12988 tokens truncated…
     <dt class="class-distract">
         <em>class</em>
         <span class="class-desc">spinqit.algorithm.optimizer.ADAM</span>
@@ -1414,7 +1107,7 @@ SpinQit has three native optimizers and three interfaces to use optimizers from 
         <dl>
             <dt class="method-distract">
                 <span class="method-name">optimize</span>
-                <em class="method-param">(expval_fn)</em>
+                <em class="method-param">(qlayer, *params)</em>
             </dt>
         </dl>
         <dl>
@@ -1422,7 +1115,8 @@ SpinQit has three native optimizers and three interfaces to use optimizers from 
                 <p>Optimize the objective function.</p>
                 <dl class="field-list simple">
                     <dt class="field-odd">Parameters</dt>
-                    <dd class="field-odd"><p><strong>expval_fn</strong> – ExpvalCost, the objective function based on an Hamiltonian</p>
+                    <dd class="field-odd"><p><strong>qlayer</strong> – QLayer, the interface wrapping circuit and execution configuration</p>
+                    <p><strong>*params</strong> - Parameter, parameters used in the quantum circuit</p>
                     </dd>
                     <dt class="field-even">Returns</dt>
                     <dd class="field-even"><p>The list of loss values</p>
@@ -1467,7 +1161,7 @@ SpinQit has three native optimizers and three interfaces to use optimizers from 
         <dl>
             <dt class="method-distract">
                 <span class="method-name">optimize</span>
-                <em class="method-param">(expval_fn)</em>
+                <em class="method-param">(qlayer, *params)</em>
             </dt>
         </dl>
         <dl>
@@ -1475,7 +1169,8 @@ SpinQit has three native optimizers and three interfaces to use optimizers from 
                 <p>Optimize the objective function.</p>
                 <dl class="field-list simple">
                     <dt class="field-odd">Parameters</dt>
-                    <dd class="field-odd"><p><strong>expval_fn</strong> – ExpvalCost, the objective function based on an Hamiltonian</p>
+                    <dd class="field-odd"><p><strong>qlayer</strong> – QLayer, the interface wrapping circuit and execution configuration</p>
+                    <p><strong>*params</strong> - Parameter, parameters used in the quantum circuit</p>
                     </dd>
                     <dt class="field-even">Returns</dt>
                     <dd class="field-even"><p>The list of loss values</p>
@@ -1520,7 +1215,7 @@ SpinQit has three native optimizers and three interfaces to use optimizers from 
         <dl>
             <dt class="method-distract">
                 <span class="method-name">optimize</span>
-                <em class="method-param">(expval_fn)</em>
+                <em class="method-param">(qlayer, *params)</em>
             </dt>
         </dl>
         <dl>
@@ -1528,7 +1223,8 @@ SpinQit has three native optimizers and three interfaces to use optimizers from 
                 <p>Optimize the objective function.</p>
                 <dl class="field-list simple">
                     <dt class="field-odd">Parameters</dt>
-                    <dd class="field-odd"><p><strong>expval_fn</strong> – ExpvalCost, the objective function based on an Hamiltonian</p>
+                    <dd class="field-odd"><p><strong>qlayer</strong> – Qlayer, the interface wrapping circuit and execution configuration</p>
+                    <p><strong>*params</strong> - Parameter, parameters used in the quantum circuit</p>
                     </dd>
                     <dt class="field-even">Returns</dt>
                     <dd class="field-even"><p>The list of loss values</p>
@@ -1550,7 +1246,7 @@ SpinQit has three native optimizers and three interfaces to use optimizers from 
         <dl>
             <dt class="method-distract">
                 <span class="method-name">__init__</span>
-                <em class="method-param">(maxiter, tolerance, learning_rate, verbose, optim_type, *args, **kwargs)</em>
+                <em class="method-param">(maxiter, tolerance, learning_rate, verbose, optim_type, **kwargs)</em>
             </dt>
         </dl>
         <dl>
@@ -1563,6 +1259,7 @@ SpinQit has three native optimizers and three interfaces to use optimizers from 
                     <p><strong>learning_rate</strong> – float, the learning rate, 0.01 by default</p>
                     <p><strong>verbose</strong> – bool, whether to show optimization details, True by default </p>
                     <p><strong>optim_type</strong> – str, 'NAdam', 'Adam', 'SGD', 'AdamW', or 'Adagrad', and the default type is 'NAdam'</p>
+                    <p><strong>kwargs</strong> - dict, other parameters used by PyTorch optimizers</p>
                     </dd>
                     <dt class="field-even">Returns</dt>
                     <dd class="field-even"><p>An interface instance that calls the optimizers in PyTorch</p>
@@ -1573,7 +1270,7 @@ SpinQit has three native optimizers and three interfaces to use optimizers from 
         <dl>
             <dt class="method-distract">
                 <span class="method-name">optimize</span>
-                <em class="method-param">(expval_fn)</em>
+                <em class="method-param">(qlayer, *params)</em>
             </dt>
         </dl>
         <dl>
@@ -1581,7 +1278,8 @@ SpinQit has three native optimizers and three interfaces to use optimizers from 
                 <p>Optimize the objective function.</p>
                 <dl class="field-list simple">
                     <dt class="field-odd">Parameters</dt>
-                    <dd class="field-odd"><p><strong>expval_fn</strong> – ExpvalCost, the objective function based on an Hamiltonian</p>
+                    <dd class="field-odd"><p><strong>qlayer</strong> – Qlayer, the interface wrapping circuit and execution configuration</p>
+                    <p><strong>*params</strong> - Parameter, parameters used in the quantum circuit</p>
                     </dd>
                     <dt class="field-even">Returns</dt>
                     <dd class="field-even"><p>The list of loss values</p>
@@ -1627,7 +1325,7 @@ SpinQit has three native optimizers and three interfaces to use optimizers from 
         <dl>
             <dt class="method-distract">
                 <span class="method-name">optimize</span>
-                <em class="method-param">(expval_fn)</em>
+                <em class="method-param">(fn, *params)</em>
             </dt>
         </dl>
         <dl>
@@ -1635,7 +1333,8 @@ SpinQit has three native optimizers and three interfaces to use optimizers from 
                 <p>Optimize the objective function.</p>
                 <dl class="field-list simple">
                     <dt class="field-odd">Parameters</dt>
-                    <dd class="field-odd"><p><strong>expval_fn</strong> – ExpvalCost, the objective function based on an Hamiltonian</p>
+                    <dd class="field-odd"><p><strong>fn</strong> – Qlayer, the interface wrapping circuit and execution configuration</p>
+                    <p><strong>*params</strong> - Parameter, parameters used in the quantum circuit</p>
                     </dd>
                     <dt class="field-even">Returns</dt>
                     <dd class="field-even"><p>The list of loss values</p>
@@ -1680,7 +1379,7 @@ SpinQit has three native optimizers and three interfaces to use optimizers from 
         <dl>
             <dt class="method-distract">
                 <span class="method-name">optimize</span>
-                <em class="method-param">(expval_fn)</em>
+                <em class="method-param">(qlayer, *params)</em>
             </dt>
         </dl>
         <dl>
@@ -1688,10 +1387,122 @@ SpinQit has three native optimizers and three interfaces to use optimizers from 
                 <p>Optimize the objective function.</p>
                 <dl class="field-list simple">
                     <dt class="field-odd">Parameters</dt>
-                    <dd class="field-odd"><p><strong>expval_fn</strong> – ExpvalCost, the objective function based on an Hamiltonian</p>
+                    <dd class="field-odd"><p><strong>qlayer</strong> – Qlayer, the interface wrapping circuit and execution configuration</p>
+                    <p><strong>*params</strong> - Parameter, parameters used in the quantum circuit</p>
                     </dd>
                     <dt class="field-even">Returns</dt>
                     <dd class="field-even"><p>The list of loss values</p>
+                    </dd>
+                </dl>
+            </dd>
+        </dl>
+    </dd>
+</dl>
+
+### Solver
+SpinQit provides two off-the-shelf problem solvers based on quantum algorithms. The satisfiability problem (SAT) and the traveling salesman problem (TSP) can model many real-world application problems and can be solved efficiently by quantum algorithms.
+
+#### SATSolver
+
+<dl>
+    <dt class="class-distract">
+        <em>class</em>
+        <span class="class-desc">spinqit.solver.SATSolver</span>
+    </dt>
+    <dd>
+        <p>A solver to solve the satisfaction problem using Grover's algorithm.</p>
+        <p><b>Methods</b></p>
+        <dl>
+            <dt class="method-distract">
+                <span class="method-name">__init__</span>
+                <em class="method-param">(expr)</em>
+            </dt>
+        </dl>
+        <dl>
+            <dd>
+                <p>Create a SATSolver instance for a specific satisfaction problem.</p>
+                <dl class="field-list simple">
+                    <dt class="field-odd">Parameters</dt>
+                    <dd class="field-odd"><p><strong>expr</strong> – str or sympy.logic.boolalg.And, the expression that represents the satisfaction problem to solve</p>
+                    </dd>
+                    <dt class="field-even">Returns</dt>
+                    <dd class="field-even"><p>An instance of SATSolver</p>
+                    </dd>
+                </dl>
+            </dd>
+        </dl>
+        <dl>
+            <dt class="method-distract">
+                <span class="method-name">solve</span>
+                <em class="method-param">(backend_mode, **kwargs)</em>
+            </dt>
+        </dl>
+        <dl>
+            <dd>
+                <p>Solve the satisfaction on the given backend.</p>
+                <dl class="field-list simple">
+                    <dt class="field-odd">Parameters</dt>
+                    <dd class="field-odd"><p><strong>backend_mode</strong> - str, the backend to execute the quantum circuit, one of 'spinq', 'torch', 'qasm', 'nmr', and 'cloud'</p>
+                    <p><strong>**kwargs</strong> - Any, configurations for the backend</p>
+                    </dd>
+                    <dt class="field-even">Returns</dt>
+                    <dd class="field-even"><p>The assignment satisfying the constraints</p>
+                    </dd>
+                </dl>
+            </dd>
+        </dl>
+    </dd>
+</dl>
+
+#### TSPSolver
+
+<dl>
+    <dt class="class-distract">
+        <em>class</em>
+        <span class="class-desc">spinqit.solver.TSPSolver</span>
+    </dt>
+    <dd>
+        <p>A solver to solve the traveling salesman problem using VQE algorithm.</p>
+        <p><b>Methods</b></p>
+        <dl>
+            <dt class="method-distract">
+                <span class="method-name">__init__</span>
+                <em class="method-param">(vertex_num, weighted_adjacency, penalty)</em>
+            </dt>
+        </dl>
+        <dl>
+            <dd>
+                <p>Create a TSPSolver instance for a specific graph.</p>
+                <dl class="field-list simple">
+                    <dt class="field-odd">Parameters</dt>
+                    <dd class="field-odd"><p><strong>vertex_num</strong> – int, the number of vertices</p>
+                    <p><strong>weighted_adjacency</strong> – list or numpy.ndarray, the weighted adjacency matrix in which weighted_adjacency[i][j] is the weight of the edge from i to j</p>
+                    <p><strong>penalty</strong> – float, a parameter required in the algorithm whose value must be larger than the maximum weight</p>
+                    </dd>
+                    <dt class="field-even">Returns</dt>
+                    <dd class="field-even"><p>An instance of TSPSolver</p>
+                    </dd>
+                </dl>
+            </dd>
+        </dl>
+        <dl>
+            <dt class="method-distract">
+                <span class="method-name">solve</span>
+                <em class="method-param">(iterations, backend_mode, grad_method, learning_rate)</em>
+            </dt>
+        </dl>
+        <dl>
+            <dd>
+                <p>Solve the TSP problem with specific configurations.</p>
+                <dl class="field-list simple">
+                    <dt class="field-odd">Parameters</dt>
+                    <dd class="field-odd"><p><strong>iterations</strong> - int, the number of maximum iterations</p>
+                    <p><strong>backend_mode</strong> - str, the backend to execute the quantum circuit, 'spinq' or 'torch'</p>
+                    <p><strong>grad_method</strong> - str, the gradient method used in VQE</p>
+                    <p><strong>learning_rate</strong> = float, 0.1 by default, the learning rate used in the optimizer</p>
+                    </dd>
+                    <dt class="field-even">Returns</dt>
+                    <dd class="field-even"><p>The visiting order of vertices</p>
                     </dd>
                 </dl>
             </dd>
@@ -1746,7 +1557,7 @@ print(result.counts)
 
 ### HHL Example
 
-Systems of linear equations are foundamental to various science and engineering problems, especially many machine learning algorithms. The Harrow-Hassidim-Lloyd algorithm (HHL) can be used 
+Systems of linear equations are fundamental to many science and engineering problems, especially in machine learning. The Harrow-Hassidim-Lloyd algorithm (HHL) can be used to solve certain linear systems on a quantum computer.
 
 ```
 from spinqit.algorithm import HHL
@@ -1776,7 +1587,7 @@ Variational Quantum Eigensolver (VQE) can be used for quantum chemistry and opti
 ```
 import numpy as np
 from spinqit import generate_hamiltonian_matrix
-from spinqit import Circuit, Parameter, Rx, Rz, CX
+from spinqit import Circuit, Rx, Rz, CX
 from spinqit.algorithm import VQE
 from spinqit.algorithm.optimizer import TorchOptimizer
 
@@ -1803,23 +1614,22 @@ lr = 0.1
 seed = 1024
 np.random.seed(seed)
 
-params = Parameter(np.random.uniform(0, 2 * np.pi, 3 * qubit_num * depth),
-                               trainable=True)
-ansatz = Circuit(params)
-qreg = ansatz.allocateQubits(qubit_num)
+circ = Circuit()
+qreg = circ.allocateQubits(qubit_num)
+params = circ.add_params(shape=(depth, qubit_num, 3))
 for d in range(depth):
     for q in range(qubit_num):
-        ansatz << (Rx, qreg[q], lambda x, idx=3 * qubit_num * d + 3 * q: x[idx])
-        ansatz << (Rz, qreg[q], lambda x, idx=3 * qubit_num * d + 3 * q + 1: x[idx])
-        ansatz << (Rx, qreg[q], lambda x, idx=3 * qubit_num * d + 3 * q + 2: x[idx])
+        circ << (Rx, qreg[q], params[d][q][0])
+        circ << (Rz, qreg[q], params[d][q][1])
+        circ << (Rx, qreg[q], params[d][q][2])
     
     for q in range(qubit_num - 1):
-        ansatz.append(CX, [qreg[q], qreg[q + 1]])
-    ansatz.append(CX, [qreg[qubit_num - 1], qreg[0]])
+        circ.append(CX, [qreg[q], qreg[q + 1]])
+    circ.append(CX, [qreg[qubit_num - 1], qreg[0]])
 
 optimizer = TorchOptimizer(maxiter=Iter, verbose=False, learning_rate=lr)
 ham_mat = generate_hamiltonian_matrix(ham)
-vqe = VQE(qubit_num, depth, ham_mat, ansatz, optimizer=optimizer)
+vqe = VQE(ham_mat, optimizer, ansatz=circ, params=(depth, qubit_num, 3))
 loss_list = vqe.run(mode='torch', grad_method='backprop')
 # loss_list = vqe.run(mode='spinq', grad_method='param_shift')
 # loss_list = vqe.run(mode='spinq', grad_method='adjoint_differentiation')
@@ -1837,7 +1647,7 @@ import numpy as np
 
 from spinqit import get_basic_simulator, BasicSimulatorConfig
 from spinqit import generate_hamiltonian_matrix
-from spinqit.algorithm.optimizer.adam import ADAM
+from spinqit.algorithm.optimizer import ADAM, TorchOptimizer
 from spinqit.algorithm.qaoa import QAOA
 
     
@@ -1859,21 +1669,19 @@ print(ham)
 
 qubit_num = vcount
 depth = 4
-Iter = 50
+iter_num = 30
 lr = 0.1
 
 np.random.seed(1024)
-optimizer = ADAM(maxiter=Iter, verbose=True, learning_rate=lr, )
+optimizer = TorchOptimizer(maxiter=iter_num, verbose=True, learning_rate=lr)
 ham_mat = generate_hamiltonian_matrix(ham)
-qaoa = QAOA(qubit_num, depth, optimizer=optimizer, problem=ham_mat, )
+qaoa = QAOA(ham_mat, optimizer, depth)
+
 
 loss = qaoa.run(mode='torch', grad_method='backprop')[-1]
 
-backend = get_basic_simulator()
-config = BasicSimulatorConfig()
-config.configure_shots(1024)
-result = qaoa.get_measurements(backend, config)
-print(result.counts)
+result = qaoa.optimized_result
+print(result.probabilities)
 ```
 
 ### Quantum Counting Example
@@ -1914,43 +1722,49 @@ dataset = [2, 3, 1, 4, 5, 6, 7, 15]
 seed = 330
 max_searcher = QSearching(seed=seed)
 max_idx = max_searcher.search(dataset, show=False)
-min_searcher = QSearching(find='min', seed=seed)
+min_searcher = QSearching('min', backend_mode='torch', seed=seed)
 min_idx = min_searcher.search(dataset, show=False)
 print(max_idx, min_idx)
 ```
 ### QNN Example
 
-The example below shows how to use SpinQit and PyTorch together to solve a classification problem.
+The example below shows how to use the PyTorch interface in SpinQit to solve a classification problem.
 
-``` 
+```
 import numpy as np
 import torch
 import torch.optim as optim
 from torch import nn
+from functools import partial
 
-from spinqit import Circuit, Parameter
-from spinqit import Rz, Ry, CX
-from spinqit.algorithm import ExpvalCost
-from spinqit.algorithm import QuantumModel
+from spinqit import Circuit, Rz, Ry, CX, generate_hamiltonian_matrix
+from spinqit.primitive import amplitude_encoding
+from spinqit.interface import to_qlayer, TorchQuantumFunction
+from spinqit.algorithm.loss import expval
 
-
-def build_circuit(weights, qubit_num, layer_num):
-    circ = Circuit(weights)
+#@to_qlayer(backend_mode='nmr', grad_method='param_shift', measure=expval(generate_hamiltonian_matrix([('ZI', 1)])), ip='192.168.2.4', port=59585, account=('user1','123456'), task_name='classifier', task_desc='test')
+@to_qlayer(backend_mode='torch', grad_method='backprop', measure=expval(generate_hamiltonian_matrix([('ZI', 1)])))
+def build_circuit(state, weights_shape, qubit_num, layer_num):
+    circ = Circuit()
+    weight = circ.add_params(shape=weights_shape) 
     q = circ.allocateQubits(qubit_num)
-
+    
+    state = state.numpy()
+    
+    #encode the input vector
+    ilist = amplitude_encoding(state, q)
+    circ.extend(ilist)
+    
     for i in range(layer_num):
-        circ << (Rz, q[0], lambda x, idx=i * layer_num + 0: x[idx])
-        circ << (Ry, q[0], lambda x, idx=i * layer_num + 1: x[idx])
-        circ << (Rz, q[0], lambda x, idx=i * layer_num + 2: x[idx])
-        circ << (Rz, q[1], lambda x, idx=i * layer_num + 3: x[idx])
-        circ << (Ry, q[1], lambda x, idx=i * layer_num + 4: x[idx])
-        circ << (Rz, q[1], lambda x, idx=i * layer_num + 5: x[idx])
+        for j in range(qubit_num):
+            circ << (Rz, q[j], weight[i][j][0])
+            circ << (Ry, q[j], weight[i][j][1])
+            circ << (Rz, q[j], weight[i][j][2])
         circ << (CX, q)
     return circ
 
 
-def get_data():
-    file_path = "../resource/iris_classes_data.txt"
+def get_data(file_path):
     data = np.loadtxt(file_path)
     Xdata = data[:, 0:2]
     padding = 0.3 * np.ones((len(Xdata), 1))
@@ -1965,47 +1779,54 @@ def get_data():
     num_data = len(Y)
     n_train = int(0.75 * num_data)
     index = np.random.permutation(range(num_data))
-    x_train = torch.tensor(features[index[:n_train]]).to(torch.float32)
-    y_train = torch.tensor(Y[index[:n_train]]).to(torch.float32)
-    x_val = torch.tensor(features[index[n_train:]]).to(torch.float32)
+    x_train = torch.tensor(features[index[:n_train]], requires_grad=False).to(torch.float32)
+    y_train = torch.tensor(Y[index[:n_train]], requires_grad=False).to(torch.float32)
+    x_val = torch.tensor(features[index[n_train:]], requires_grad=False).to(torch.float32)
     y_val = Y[index[n_train:]]
     return n_train, x_train, y_train, x_val, y_val,
 
 
-def get_model():
-    qubit_num, layer_num = 2, 6
+def get_model(qubit_num, layer_num, bias=None):
+    weight_shape = (layer_num, qubit_num, 3)
 
-    class HybridModel(nn.Module):
-        def __init__(self, n_qubit, n_layer, ):
-            super(HybridModel, self).__init__()
-            w = 0.01 * Parameter(np.random.randn(layer_num * qubit_num * 3), trainable=True)
-            circuit = build_circuit(w, n_qubit, n_layer, )
-            fn = ExpvalCost(circuit,
-                            hamiltonian=([('Z', 1)]),
-                            backend_mode='torch',
-                            grad_method='backprop', )
-            quantum_layer = QuantumModel(fn)
-            quantum_layer.quantum_fn.update_backend_config(qubits=[0])
-            b = torch.tensor(0.0)
+    class MyQuantumModule(nn.Module):
+        def __init__(self, qlayer_func, weight_shape, bias=None):
+            super(MyQuantumModule, self).__init__()
+            self.w = nn.Parameter(0.01 * torch.randn(weight_shape), requires_grad=True)
+            self.b = bias
+            self.qlayer_func = qlayer_func
 
-            self.b = nn.Parameter(b, requires_grad=True)
-            self.quantum_layer = quantum_layer
+        def forward(self, state):
+            res = torch.zeros(state.size(0))
+            if len(state.shape) > 1:
+                for i in range(state.size(0)):
+                    myqlayer = self.qlayer_func(state[i])
+                    kwargs = dict(
+                        qlayer=myqlayer,
+                    )
+                    loss = TorchQuantumFunction.apply(kwargs, self.w)
+                    res[i] += loss
+            else:
+                myqlayer = self.qlayer_func(state)
+                kwargs = dict(
+                    qlayer=myqlayer,
+                )
+                res = TorchQuantumFunction.apply(kwargs, self.w)
+            
+            if self.b is not None:
+                return res + self.b
+            return res
 
-        def forward(self, state, ):
-            return self.quantum_layer(state=state) + self.b
-
-    model = HybridModel(qubit_num, layer_num)
+    qlayer_func = partial(build_circuit, weights_shape = weight_shape, qubit_num=qubit_num, layer_num=layer_num)
+    model = MyQuantumModule(qlayer_func, weight_shape, bias)
     return model
 
 
-def test_train():
-    model = get_model()
-    num_train, features_train, labels_train, features_val, labels_val, = get_data()
+def test_train(model, num_train, features_train, labels_train, features_val, labels_val):
     optimizer = optim.SGD(model.parameters(), lr=0.01, momentum=0.9, nesterov=True)
     loss_fn = nn.MSELoss()
-    iter = 45
+    iter = 45 
     batch_size = 10
-
     print('-----begin train----------')
     for i in range(iter):
         batch_index = np.random.randint(0, num_train, (batch_size,))
@@ -2014,12 +1835,11 @@ def test_train():
 
         optimizer.zero_grad()
         pred = model(feats_train_batch)
-
         loss = loss_fn(pred, Y_train_batch)
         print(f'Loss : {loss.item()}')
         loss.backward()
         optimizer.step()
-
+    
     print('---------begin predict--------------')
     total_error = 0
     with torch.no_grad():
@@ -2029,111 +1849,122 @@ def test_train():
             print(pred, labels_val[k])
             if abs(labels_val[k] - np.sign(pred.item())) > 1e-5:
                 total_error = total_error + 1
-
     print(total_error)
+    assert np.allclose(total_error, 0)
 
 
 if __name__ == '__main__':
+    file_path = "resource/iris_classes_data.txt"
+    qubit_num, layer_num = 2, 6
     seed = 1024
     np.random.seed(seed)
-    test_train()
+    torch.random.manual_seed(seed)
+    bias = nn.Parameter(torch.tensor(0.0), requires_grad=True)
+    model = get_model(qubit_num, layer_num, bias=bias)
+    num_train, features_train, labels_train, features_val, labels_val, = get_data(file_path)
+    test_train(model, num_train, features_train, labels_train, features_val, labels_val, )
 ```
 
+The example below shows how to use the TensorFlow interface in SpinQit to solve the same classification problem.
 
-<style>
-html.writer-html5 .rst-content table {
-  width:100%
-}
-html.writer-html5 .rst-content table th{
-  vertical-align:middle;
-  font-weight:normal;
-}
-html.writer-html5 .rst-content table th:nth-child(1) {
-  width:150px;
-}
-html.writer-html5 .rst-content table th:nth-child(2) p{
-  white-space:normal;
-}
-html.writer-html5 .rst-content table td:nth-child(2) p{
-  white-space:normal;
-}
+```
+import numpy as np
+import tensorflow as tf
+from tensorflow.keras import Sequential, losses, optimizers
 
-.class-distract{
-    color: #2980b9;
-    border-top: 3px solid #6ab0de;
-    background: #e7f2fa;
-    line-height: normal;
-    font-weight: 700;
-    display: inline-block;
-    padding: 6px;
-}
-.class-distract em{
-    color: #2980b9;
-    font-style: italic;
-}
-.class-distract .class-desc{
-    color: #000;
-    font-family: SFMono-Regular,Menlo,Monaco,Consolas,Liberation Mono,Courier New,Courier,monospace;
-}
+from spinqit import Circuit, Rz, Ry, CX, generate_hamiltonian_matrix, StateVector
+from spinqit.interface import to_qlayer
+from spinqit.interface.tf_interface import QuantumLayer
+from spinqit.algorithm.loss import expval
 
-.admonition-distract .admonition-title{
-    padding: 6px 12px;
-    font-size: 16px;
-    font-weight: 700;
-    background-color: #6ab0de;
-    color: #fff;
-    box-sizing: border-box;
-    width: 100%;
-    margin: 0;
-}
-.admonition-distract .admonition-desc{
-    background-color: #e7f2fa;
-    padding: 12px;
-    margin-bottom: 12px;
-}
-.rst-content .code-distract{
-    color: darkgreen;
-    border: 1px solid #e1e4e5;
-    font-size: 75%;
-}
+@to_qlayer(backend_mode='torch',
+           grad_method='backprop',
+           measure=expval(generate_hamiltonian_matrix([('ZI', 1)])))
+def build_circuit(state_shape, weights_shape, qubit_num, layer_num):
+    circ = Circuit()
+    state = circ.add_params(shape=state_shape) 
+    weight = circ.add_params(shape=weights_shape) 
+    q = circ.allocateQubits(qubit_num)
+    circ << (StateVector, q, state[:])
+    for i in range(layer_num):
+        for j in range(qubit_num):
+            circ << (Rz, q[j], weight[i][j][0])
+            circ << (Ry, q[j], weight[i][j][1])
+            circ << (Rz, q[j], weight[i][j][2])
+        circ << (CX, q)
+    return circ
 
-.method-distract{
-    border: none;
-    border-left: 3px solid #ccc;
-    background: #f0f0f0;
-    color: #555;
-    padding: 6px;
-}
+def get_data(file_path):
+    data = np.loadtxt(file_path)
+    Xdata = data[:, 0:2]
+    padding = 0.3 * np.ones((len(Xdata), 1))
+    X_pad = np.c_[np.c_[Xdata, padding], np.zeros((len(Xdata), 1))]
+    normalization = np.sqrt(np.sum(X_pad ** 2, -1))
+    X_norm = (X_pad.T / normalization).T
+    features = X_norm
 
-.method-distract .method-name{
-    color: #000;
-    font-family: SFMono-Regular,Menlo,Monaco,Consolas,Liberation Mono,Courier New,Courier,monospace;
-}
-.method-distract .method-param{
-    font-size: 90%;
-    color: #555;
-}
+    Y = data[:, -1]
+    np.random.seed(0)
+    num_data = len(Y)
+    n_train = int(0.75 * num_data)
+    index = np.random.permutation(range(num_data))
 
-.method-distract .sub-param-distract{
-    margin: 0 0 12px 24px;
-}
-.field-list{
-    display: grid;
-    grid-template-columns: max-content auto;
-}
-.field-list dt{
-    background: rgba(118, 185, 0, 0.1);
-    color: rgba(59,93,0,1);
-    font-weight: 700;
-    line-height: 24px;
-    border-top: solid 3px rgba(59,93,0,1);
-}
-.field-list dd{
-    margin: 0 0 12px 24px;
-    line-height: 24px;
-}
-.field-list dd p {
-    margin-bottom: 12px !important;
-}
-</style>
+    x_train = tf.Variable(features[index[:n_train]], trainable=False)
+    y_train = tf.Variable(Y[index[:n_train]], trainable=False)
+    x_val = tf.Variable(features[index[n_train:]], trainable=False)
 
+    y_val = Y[index[n_train:]]
+    return n_train, x_train, y_train, x_val, y_val,
+
+def get_model(qubit_num, layer_num, bias=None):
+    weight_shape = (layer_num, qubit_num, 3)
+    state_shape = (2 ** qubit_num)
+    qlayer = build_circuit(state_shape, weight_shape, qubit_num, layer_num)
+    
+    ql = QuantumLayer(qlayer, weight_shape, bias)
+    model = Sequential()
+    model.add(ql)
+    return model
+
+def test_train(model, num_train, features_train, labels_train, features_val, labels_val):
+    optimizer = optimizers.SGD(learning_rate=0.01, momentum=0.9, nesterov=True)
+    loss_fn = losses.MeanSquaredError()
+    iter = 55
+    batch_size = 10
+    print('-----begin train----------')
+    for i in range(iter):
+        batch_index = np.random.randint(0, num_train, (batch_size,))
+        feats_train_batch = tf.gather(features_train, batch_index) 
+        Y_train_batch = tf.gather(labels_train, batch_index)
+        with tf.GradientTape() as tape:
+            pred = model(feats_train_batch, training=True)
+            loss = loss_fn(Y_train_batch, pred)
+            gradients = tape.gradient(loss, model.trainable_variables)
+            optimizer.apply_gradients(zip(gradients, model.trainable_variables))
+            print(f'Loss : {loss.numpy()}')
+
+    print('---------begin predict--------------')
+    total_error = 0
+    for k in range(features_val.shape[0]):
+        test_x = features_val[k]
+        pred = model(test_x)
+        print(pred, labels_val[k])
+        if abs(labels_val[k] - np.sign(pred.numpy())) > 1e-5:
+            total_error = total_error + 1
+            
+    print(total_error)
+    assert np.allclose(total_error, 0)
+
+
+if __name__ == '__main__':
+    file_path = "resource/iris_classes_data.txt"
+    qubit_num, layer_num = 2, 6
+    seed = 1024
+    np.random.seed(seed)
+    tf.random.set_seed(seed)
+    bias = tf.Variable(0.0, trainable=True)
+    model = get_model(qubit_num, layer_num, bias=bias)
+    
+    num_train, features_train, labels_train, features_val, labels_val, = get_data(file_path)
+    test_train(model, num_train, features_train, labels_train, features_val, labels_val)
+```

@@ -13,7 +13,7 @@
 # limitations under the License.
 
 from typing import List
-from spinqit.model import I, Gate, GateBuilder, InverseBuilder
+from spinqit.model import I, Ph, Gate, GateBuilder, InverseBuilder
 from spinqit.model import DecomposerError
 from .diagonal import generate_diagonal_gates
 from .multi_controlled_gate import generate_mcg_diagonal
@@ -252,7 +252,15 @@ def build_gate_for_isometry(isometry: np.ndarray) -> Gate:
 
     if len(diag_mat) > 1 and not check_diag_is_identity(diag_mat):
         diag_gate = generate_diagonal_gates(diag_mat)
-        isometry_builder.append(diag_gate, list(range(qubit_num)))
+        # For a 2**n by 2**m isometry, columns index the low m input
+        # qubits; the other n-m input qubits are initialized to zero.
+        input_qubit_num = int(np.log2(len(diag_mat)))
+        isometry_builder.append(
+            diag_gate, list(range(qubit_num - input_qubit_num, qubit_num)))
+    elif abs(np.angle(diag_mat[0])) > phase_epsilon:
+        # A scalar diagonal can skip rotations, but not its global phase:
+        # controlling the resulting isometry makes that phase relative.
+        isometry_builder.append(Ph, [0], float(np.angle(diag_mat[0])))
     
     isometry_builder.append(inv_builder.to_gate(), list(range(qubit_num-1, -1, -1)))
     return isometry_builder.to_gate()

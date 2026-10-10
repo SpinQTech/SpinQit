@@ -13,6 +13,7 @@
 # limitations under the License.
 
 from typing import Tuple, List, Union, Callable
+from uuid import uuid4
 import numpy as np
 
 from spinqit.utils.function import to_list
@@ -70,7 +71,9 @@ class GateBuilder(object):
     """
     def __init__(self, qubit_num: int, gate_name: str=None) -> None:
         if gate_name is None:
-            gate_name = str(id(self)) + '_' + str(qubit_num)
+            # Builders are temporary; their object IDs can be reused while gates
+            # still exist. Compiler definitions require distinct gate names.
+            gate_name = uuid4().hex + '_' + str(qubit_num)
         self.__gate = Gate(gate_name, qubit_num)
 
     def append(self, gate: Gate, qubits: List, param_lambda: Union[float, int, complex, Callable] = None):

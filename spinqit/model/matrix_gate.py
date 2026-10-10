@@ -34,7 +34,7 @@ class MatrixGateBuilder(GateBuilder):
             qubit_num = int(np.log2(zmat.shape[0]))
         
         super().__init__(qubit_num)
-        gate_name = str(id(self)) + '_' + str(qubit_num)
+        gate_name = self.to_gate().label
         self._GateBuilder__gate = MatrixGate(gate_name, qubit_num)
         if isinstance(mat, np.ndarray):
             self._GateBuilder__gate.matrix = lambda *args: mat

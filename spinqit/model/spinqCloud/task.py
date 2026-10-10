@@ -68,7 +68,8 @@ class Task:
         self._bitnum = bitNum
         self._clbitnum = clbitnum
         self._simu = simu
-        self._active_bits = [i for i in range(1, self._bitnum+1)]
+        if self._bitnum is not None and self._bitnum > 0:
+            self._active_bits = [i for i in range(1, self._bitnum+1)]
         self._platform_code = platform_code
         self._log_to_phy_mapping = log_to_phy_mapping
         self._calc_matrix = calc_matrix

@@ -182,7 +182,7 @@ def _search_best_swap(gates: List, physical_edges: List, mapping: Layout, dist_m
 
     return swap_gates, remaining_gates, best_updates 
 
-def generate_lookahead_routing(gates: List[Tuple], topology: List[Tuple], mapping: Layout, search_depth: int = 4, search_width: int = 4) -> Tuple[Dict, List]:
+def generate_sven_routing(gates: List[Tuple], topology: List[Tuple], mapping: Layout, search_depth: int = 4, search_width: int = 4) -> Tuple[Dict, List]:
     '''Generate the swap gates to add and the physical qubits of gates to update.
        Each input gate is represented by (gate_id, logical_qubits). A gate_id may be (caller_id, callee_id)
        The swap gates are represented by a dict. The key is a gate id indicating where to insert the swap gate. The value is a list of swaps. Each swap gate is represented by (physical_qubits). 

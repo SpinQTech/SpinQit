@@ -18,3 +18,4 @@ from .nmr_backend import NMRConfig
 from .pytorch_backend import TorchSimulatorConfig
 from .qasm_backend import QasmConfig, QiskitQasmResult
 from .spinq_cloud_backend import SpinQCloudConfig
+from .sc_backend import SCConfig

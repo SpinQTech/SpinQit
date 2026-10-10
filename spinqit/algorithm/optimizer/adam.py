@@ -41,6 +41,9 @@ class ADAM(Optimizer):
         self._verbose = verbose
         self._step = 1
 
+    def set_maxiter(self, maxiter: int):
+        self.__maxiter = maxiter
+
     def optimize(self, qlayer, *params):
         loss_list = []
         params = list(params)

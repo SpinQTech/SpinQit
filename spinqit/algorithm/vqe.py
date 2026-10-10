@@ -15,6 +15,7 @@ from typing import List, Union
 
 import numpy as np
 import scipy.sparse
+import pickle
 
 from spinqit.model import Circuit, Parameter, Rx, Rz, CX
 from spinqit.interface.qlayer import QLayer
@@ -72,6 +73,18 @@ class VQE(object):
     def run(self, mode='spinq', grad_method='adjoint_differentiation', **kwargs):
         self.fn = self.set_qlayer(self.hamiltonian, mode, grad_method, **kwargs)
         loss_list = self.optimizer.optimize(self.fn, self.params)
+        return loss_list
+
+    def run_with_iterations(self, output_file, iterations, mode='spinq', grad_method='param_shift', **kwargs):
+        input_file = kwargs.get('input_file', None)
+        if input_file is not None:
+            with open(input_file, 'rb') as f:
+                self.params = pickle.load(f)
+        self.fn = self.set_qlayer(self.hamiltonian, mode, grad_method, **kwargs)  
+        self.optimizer.set_maxiter(iterations)
+        loss_list = self.optimizer.optimize(self.fn, self.params)
+        with open(output_file, 'wb') as f:
+            pickle.dump(self.params, f)
         return loss_list
 
     @property

@@ -13,9 +13,113 @@
 # limitations under the License.
 
 from typing import List
+from copy import copy
 from igraph import Graph
+from math import pi
 from spinqit.compiler import IntermediateRepresentation, NodeType
 from spinqit.compiler.translator.gate_converter import decompose_single_qubit_gate, decompose_multi_qubit_gate
+from spinqit.model import H, Ry, Rz, Sd, P, CX, CY, CZ, SWAP, CCX, U, MEASURE, StateVector
+
+
+def _get_qubit_terminal_nodes(ir):
+    terminal_nodes = {}
+    for vid in ir.dag.topological_sorting(mode='OUT'):
+        v = ir.dag.vs[vid]
+        if v['type'] == NodeType.init_qubit.value:
+            parts = v['name'].split('_')
+            if len(parts) == 3 and parts[0].startswith('q'):
+                terminal_nodes[int(parts[0][1:]) + int(parts[2])] = vid
+        elif v['type'] in (NodeType.op.value, NodeType.caller.value, NodeType.unitary.value):
+            if 'qubits' in v.attributes() and v['qubits'] is not None:
+                for qubit in v['qubits']:
+                    terminal_nodes[int(qubit)] = vid
+    return terminal_nodes
+
+
+def _append_basis_rotation_node(ir, terminal_nodes, gate, qubit, params=None, before=None):
+    if qubit not in terminal_nodes:
+        raise ValueError(f'Cannot find qubit {qubit} in the circuit.')
+
+    if before is not None:
+        incoming = [e for e in ir.dag.vs[before].in_edges()
+                    if e.attributes().get('qubit') == qubit]
+        if len(incoming) != 1:
+            raise ValueError('Measurement has no unique input for qubit {}'.format(qubit))
+        terminal_nodes[qubit] = incoming[0].source
+        ir.dag.delete_edges([incoming[0].index])
+
+    ir.dag.add_vertices(1)
+    node_idx = ir.dag.vcount() - 1
+    v = ir.dag.vs[node_idx]
+    v['type'] = NodeType.op.value
+    v['name'] = gate.label
+    v['qubits'] = [qubit]
+    if params:
+        v['params'] = params
+    edge = ir.dag.add_edge(terminal_nodes[qubit], node_idx)
+    edge['qubit'] = qubit
+    terminal_nodes[qubit] = node_idx
+    if before is not None:
+        ir.dag.add_edge(node_idx, before, qubit=qubit)
+    return node_idx
+
+
+def _basis_rotation(pauli_string, qubits, ir):
+    if len(pauli_string) != len(qubits):
+        raise ValueError(
+            'The Pauli string length should match the number of measured qubits.'
+        )
+
+    if any(pauli.upper() not in 'IXYZ' for pauli in pauli_string):
+        raise ValueError('The input string is not a Pauli string')
+    terminal_nodes = _get_qubit_terminal_nodes(ir)
+    if any(int(q) not in terminal_nodes for q in qubits):
+        raise ValueError('Measured qubit is not in the circuit')
+    measurements = {}
+    for vid in ir.dag.topological_sorting(mode='OUT'):
+        vertex = ir.dag.vs[vid]
+        if vertex['type'] == NodeType.op.value and vertex['name'] == 'MEASURE':
+            for qubit in vertex['qubits']:
+                measurements.setdefault(qubit, vid)
+    node_idx_list = []
+    for pauli, qubit in zip(pauli_string, qubits):
+        qubit = int(qubit)
+        pauli = pauli.upper()
+        if pauli == 'X':
+            node_idx_list.append(
+                _append_basis_rotation_node(ir, terminal_nodes, H, qubit, before=measurements.get(qubit))
+            )
+        elif pauli == 'Y':
+            node_idx_list.append(
+                _append_basis_rotation_node(ir, terminal_nodes, Sd, qubit, before=measurements.get(qubit))
+            )
+            node_idx_list.append(
+                _append_basis_rotation_node(ir, terminal_nodes, H, qubit, before=measurements.get(qubit))
+            )
+        elif pauli in ('I', 'Z'):
+            continue
+        else:
+            raise ValueError('The input string is not a Pauli string')
+    ir._refresh_graph_records()
+    return node_idx_list
+
+
+
+def lazy_property(fn):
+    """
+    A lazy property decorator.
+    The function decorated is called the first time to retrieve the result and
+    then that calculated result is used the next time you access the value.
+    """
+    attr = '_lazy__' + fn.__name__
+
+    @property
+    def _lazy_property(self):
+        if not hasattr(self, attr):
+            setattr(self, attr, fn(self))
+        return getattr(self, attr)
+
+    return _lazy_property
 
 def get_graph_capsule(graph: Graph):
     return graph.__graph_as_capsule()
@@ -83,7 +187,8 @@ def _add_pauli_gate(gate, qubits, ir):
         for inst in ilist:
             node_idx = ir.add_op_node(inst.gate.label, inst.params, inst.qubits, inst.clbits)
             prev_node_idx = node_map[ir.dag.vs[node_idx]['qubits'][0]]
-            ir.dag.add_edge(prev_node_idx, node_idx, )
+            edge = ir.dag.add_edge(prev_node_idx, node_idx, )
+            # edge['qubit'] = inst.qubits
             node_idx_list.append(node_idx)
         return node_idx_list
     else:
@@ -91,3 +196,15 @@ def _add_pauli_gate(gate, qubits, ir):
         ir.remove_nodes([idx])
         return node_idx_list
 
+
+
+def _basis_rotation_ir(pauli_string, qubits, ir):
+    """Run each Pauli term on its own graph, preserving parameter gradients."""
+    working = copy(ir)
+    working.dag = ir.dag.copy()
+    working.leaves = dict(ir.leaves)
+    working.edges = list(ir.edges)
+    working.edge_attributes = {i: dict(attrs) for i, attrs in ir.edge_attributes.items()}
+    working.include_gate = set(ir.include_gate)
+    _basis_rotation(pauli_string, qubits, working)
+    return working
