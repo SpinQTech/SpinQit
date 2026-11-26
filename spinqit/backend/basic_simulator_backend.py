@@ -19,7 +19,7 @@ import numpy as onp
 from autoray import numpy as ar
 from scipy import sparse
 
-from .backend_util import get_graph_capsule, _basis_rotation_ir
+from .backend_util import get_graph_capsule, _basis_rotation_ir, _substitute_native_u_callee
 from spinqit.compiler import IntermediateRepresentation, NodeType
 from spinqit.model import Instruction
 from spinqit.model import I, H, X, Y, Z, Rx, Ry, Rz, T, Td, S, Sd, P, CX, CY, CZ, SWAP, CCX, U
@@ -114,6 +114,8 @@ class BasicSimulatorBackend(BaseBackend):
 
     @staticmethod
     def __substitute_callee_U(v, ir, qubits, clbits):
+        if len(v["params"]) == 1 and v["pindex"] == [-1]:
+            return _substitute_native_u_callee(ir, v, qubits, clbits, U.factors)
         subgates = []
         pindex_group = []
         var_full = v['pindex']

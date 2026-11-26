@@ -167,7 +167,7 @@ class TSPSolver:
             for j in range(k-1, (k-1)*vnum, vnum):
                 circ << (CSWAP, [qubits[qubit_idx], qubits[j], qubits[j - (k-1-i)]])
 
-    def tsp_vqe(self, iter_num: int, backend_mode: str, grad_method: str, learning_rate: float):
+    def tsp_vqe(self, iter_num: int, backend_mode: str, grad_method: str, learning_rate: float, **kwargs):
         qubit_num = (self.vertex_num - 1) ** 2
         ansatz = Circuit()
         qreg = ansatz.allocateQubits(qubit_num)
@@ -179,7 +179,7 @@ class TSPSolver:
         np.random.seed(1000)
         init_params = Parameter(np.random.uniform(-8.5*np.pi, -8.5 * np.pi, (qubit_num-self.vertex_num+1)//2), trainable=True)
         vqe = VQE(ham_mat, optimizer, ansatz, params=init_params)
-        vqe.run(mode=backend_mode, grad_method=grad_method)
+        vqe.run(mode=backend_mode, grad_method=grad_method, **kwargs)
         return vqe.optimized_result
 
     def complement_measurement_result(self, measurement_result) -> str:
@@ -205,8 +205,8 @@ class TSPSolver:
         
         return solution_list, distance_value
 
-    def solve(self, iterations: int, backend_mode: str, grad_method: str, learning_rate: float = 0.1):
-        result = self.tsp_vqe(iterations, backend_mode, grad_method, learning_rate)
+    def solve(self, iterations: int, backend_mode: str, grad_method: str, learning_rate: float = 0.1, **kwargs):
+        result = self.tsp_vqe(iterations, backend_mode, grad_method, learning_rate, **kwargs)
         complement_string = self.complement_measurement_result(result)
         solution_list, distance_value = self.decode_answer(complement_string)
         return solution_list, distance_value

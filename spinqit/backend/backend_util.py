@@ -18,7 +18,7 @@ from igraph import Graph
 from math import pi
 from spinqit.compiler import IntermediateRepresentation, NodeType
 from spinqit.compiler.translator.gate_converter import decompose_single_qubit_gate, decompose_multi_qubit_gate
-from spinqit.model import H, Ry, Rz, Sd, P, CX, CY, CZ, SWAP, CCX, U, MEASURE, StateVector
+from spinqit.model import H, Ry, Rz, Sd, P, CX, CY, CZ, SWAP, CCX, U, MEASURE, StateVector, Instruction
 
 
 def _get_qubit_terminal_nodes(ir):
@@ -208,3 +208,23 @@ def _basis_rotation_ir(pauli_string, qubits, ir):
     working.include_gate = set(ir.include_gate)
     _basis_rotation(pauli_string, qubits, working)
     return working
+
+def _substitute_native_u_callee(ir, v, qubits, clbits, factors):
+    get_angles = v["params"][0]
+
+    def bind_angle(transform):
+        def angle(parent_params):
+            return transform(get_angles(parent_params))
+        return angle
+
+    subgates = [
+        Instruction(
+            gate, [qubits[j] for j in qidx], clbits, bind_angle(transform)
+        )
+        for gate, qidx, transform in factors
+    ]
+
+    for index in ir.substitute_nodes([v.index], subgates, v["type"]):
+        ir.dag.vs[index]["pindex"] = [-1]
+    ir.remove_nodes([v.index], False)
+    return subgates

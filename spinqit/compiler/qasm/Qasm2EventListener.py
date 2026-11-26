@@ -460,13 +460,17 @@ class Qasm2EventListener(Qasm2Listener):
         self.branching = False
 
     def exitQuantumBarrier(self, ctx: Qasm2Parser.QuantumBarrierContext):
+        # A barrier only constrains scheduling; custom-gate IR bodies do not model it.
+        if self.__in_block:
+            return
+
         duplicates = set()
 
         try:
-            if self.__in_block:
-                raise Exception(
-                    f'For now, the `barrier` in QuantumBlock is not supported. line {ctx.start.line}'
-                )
+            # if self.__in_block:
+            #     raise Exception(
+            #         f'For now, the `barrier` in QuantumBlock is not supported. line {ctx.start.line}'
+            #     )
 
             id_list_ctx = ctx.indexIdentifierList()
             id_list = id_list_ctx.indexIdentifier()

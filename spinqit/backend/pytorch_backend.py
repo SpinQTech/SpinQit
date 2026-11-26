@@ -372,11 +372,15 @@ class TorchSimulatorBackend(BaseBackend):
                 execute_grad_mode = torch.enable_grad
             else:
                 execute_grad_mode = torch.no_grad
-            with execute_grad_mode():
+            with torch.enable_grad():
                 params_for_grad = self.process_params(params)
                 self.update_param(ir, params_for_grad)
+
+            with execute_grad_mode():
                 val, _ = self.evaluate(ir, config, measure_op)
-                backward_fn = grad_func_torch(ir, params_for_grad, config, self, measure_op, val, grad_method)
+                backward_fn = grad_func_torch(
+                    ir, params_for_grad, config, self, measure_op, val, grad_method
+                )
             return val.cpu().detach().numpy() if hasattr(val, 'cpu') else val, backward_fn
 
         return value_and_grad_fn
@@ -407,7 +411,7 @@ class TorchSimulatorBackend(BaseBackend):
                         f'Expected `np.ndarray, sparse.csr_matrix, list`, but got `{type(hamiltonian)}`'
                     )
                 if isinstance(hamiltonian, onp.ndarray):
-                    hamiltonian = torch.as_tensor(hamiltonian, dtype, device)
+                    hamiltonian = torch.as_tensor(hamiltonian, dtype=dtype, device=device)
                 elif isinstance(hamiltonian, sparse.csr_matrix):
                     hamiltonian = self._scipy_sparse_mat_to_torch_sparse_tensor(hamiltonian)
                 else:

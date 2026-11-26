@@ -38,6 +38,7 @@ comparator_map = {
 }
 
 gate_name = {
+    'u': 'U',
     'sd': 'sdg',
     'td': 'tdg',
     'i': 'id',
@@ -296,6 +297,13 @@ class QasmBackend:
                         symbols = list(map(sympy.Symbol, args))
                         value = f(symbols) if pindex == [-1] else f(*[symbols[k] for k in pindex[offset:offset+count]])
                         offset += count
+                        if isinstance(value, onp.ndarray):
+                            if value.ndim > 1:
+                                raise ValueError(
+                                    f"QASM parameters for gate {v['name']} "
+                                    "must be scalar or one-dimensional"
+                                )
+                            value = value.tolist()
                         values = value if isinstance(value, (list, tuple)) else [value]
                         params.extend(str(x).replace('**', '^') for x in values)
                 lines.append(statement(v, [wires[q] for q in v['qubits']], params))

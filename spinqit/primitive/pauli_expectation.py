@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from typing import Dict, List
+from typing import Dict, List, Union
 
 import itertools
 from functools import reduce
@@ -42,7 +42,7 @@ def calculate_pauli_expectation(pauli_string: str, probabilities: Dict) -> float
     f = reduce(np.kron, mat)
     expect_value = 0.0
     for key, value in probabilities.items():
-        idx = int(key[::-1], 2)
+        idx = int(key, 2)
         expect_value += f[idx] * value
     return expect_value
 
@@ -71,7 +71,66 @@ def generate_hamiltonian_matrix(pauli_string_list: List) -> sparse.csr_matrix:
         ham_mat += coeffi * umat
     return ham_mat
 
-def pauli_decompose(hamiltonian: np.ndarray) -> List:
+def _pauli_decompose_sparse(hamiltonian):
+    h = sparse.csr_matrix(hamiltonian, dtype=np.complex128, copy=True)
+    size, cols = h.shape
+    if size < 2 or size != cols or (size & (size - 1)):
+        raise ValueError("The size of Hamiltonian is not correct.")
+
+    h.sum_duplicates()
+    h.eliminate_zeros()
+
+    diff = (h - h.getH()).tocoo()
+    if diff.nnz:
+        values = np.asarray(h[diff.row, diff.col]).ravel()
+        adjoint = np.asarray(h[diff.col, diff.row]).ravel().conj()
+        if not np.allclose(values, adjoint):
+            raise ValueError("The input Hamiltonian is not Hermitian")
+
+    if h.nnz == 0:
+        return []
+
+    coo = h.tocoo()
+    flips = coo.row ^ coo.col
+    order = np.argsort(flips)
+    split_at = np.flatnonzero(np.diff(flips[order])) + 1
+    n_qubits = size.bit_length() - 1
+    buffer = np.zeros(size, dtype=np.complex128)
+    terms = []
+
+    for group in np.split(order, split_at):
+        x = int(flips[group[0]])
+        buffer.fill(0)
+        buffer[coo.row[group]] = coo.data[group]
+
+        width = 1
+        while width < size:
+            blocks = buffer.reshape(-1, 2 * width)
+            left = blocks[:, :width].copy()
+            right = blocks[:, width:]
+            blocks[:, :width] = left + right
+            blocks[:, width:] = left - right
+            width *= 2
+        buffer /= size
+
+        for z in np.flatnonzero(np.abs(buffer) > 1e-8):
+            z = int(z)
+            phase = 1j ** bin(x & z).count("1")  
+            coeff = np.real_if_close(phase * buffer[z]).item()
+            if abs(coeff) > 1e-8:
+                label = "".join(
+                    "IZXY"[2 * ((x >> bit) & 1) + ((z >> bit) & 1)]
+                    for bit in range(n_qubits - 1, -1, -1)
+                )
+                terms.append((label, coeff))
+
+    terms.sort()
+    return terms
+
+def pauli_decompose(hamiltonian: Union[np.ndarray, sparse.csr_matrix]) -> List:
+    if sparse.issparse(hamiltonian):
+        return _pauli_decompose_sparse(hamiltonian)
+
     n = int(np.log2(len(hamiltonian)))
     N =  2**n
 

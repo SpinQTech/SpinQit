@@ -93,9 +93,10 @@ def check_backend_and_config(backend_mode, **kwargs):
         from .spinq_cloud_backend import SpinQCloudConfig
         username = kwargs.get('username', None)
         keyfile = kwargs.get('keyfile', None)
-        backend = SpinQCloudBackend(username, keyfile)
+        host = kwargs.get('host', "http://cloud.spinq.cn:6060")
+        backend = SpinQCloudBackend(username, keyfile, host)
         config = SpinQCloudConfig()
-        platform = kwargs.get('platform', 'triangulum_vp')
+        platform = kwargs.get('platform', 'simulator')
         shots = kwargs.get('shots', 1024)
         task_name = kwargs.get('task_name', 'NoName')
         task_desc = kwargs.get('task_desc', 'No description.')
@@ -105,7 +106,8 @@ def check_backend_and_config(backend_mode, **kwargs):
         config.configure_shots(shots)
         config.configure_task(task_name, task_desc)
         config.configure_keep_layout(keep_layout)
-        config.configure_measure_qubits(mqubits)
+        if mqubits is not None:
+            config.configure_measure_qubits(mqubits)
     else:
         raise InappropriateBackendError(
             f'The backend mode `{backend_mode}` is not supported.')

@@ -20,7 +20,7 @@ from math import pi
 from scipy import sparse
 from autoray import numpy as ar
 
-from .backend_util import get_graph_capsule, _basis_rotation_ir
+from .backend_util import get_graph_capsule, _basis_rotation_ir, _substitute_native_u_callee
 from .basebackend import BaseBackend
 from ..utils import requires_grad
 from ..primitive import calculate_pauli_expectation, pauli_decompose
@@ -113,6 +113,13 @@ class NMRBackend(BaseBackend):
                         subgates.append(Instruction(Rz, qubits, clbits, v['params'][1]))
                         ir.substitute_nodes([v.index], subgates, v['type'])
                         ir.remove_nodes([v.index], False)
+                    elif len(v["params"]) == 1 and v["pindex"] == [-1]:
+                        factors = (
+                            (Rz, [0], lambda angles: angles[2]),
+                            (Ry, [0], lambda angles: angles[0]),
+                            (Rz, [0], lambda angles: angles[1]),
+                        )
+                        _substitute_native_u_callee(ir, v, qubits, clbits, factors)
                     else:
                         pindex_group = []
                         var_full = v['pindex']
@@ -188,9 +195,7 @@ class NMRBackend(BaseBackend):
         
         if measure_op.mtype == 'expval':
             hamiltonian = measure_op.hamiltonian
-            if isinstance(hamiltonian, (onp.ndarray, sparse.csr_matrix)):
-                if isinstance(hamiltonian, sparse.csr_matrix):
-                    hamiltonian = hamiltonian.A
+            if isinstance(hamiltonian, onp.ndarray) or sparse.issparse(hamiltonian):
                 hamiltonian = pauli_decompose(hamiltonian)
             value = 0.0
             mqubits = config.metadata['mqubits'] if 'mqubits' in config.metadata else list(range(ir.qnum))

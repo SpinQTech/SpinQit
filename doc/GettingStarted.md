@@ -151,7 +151,9 @@ cx q[0],q[1];
 bell q[0],q[1];
 ```
 ### IBM Qiskit
-SpinQit also supports the IBM Qiskit Python interface. The version supported by SpinQit is qiskit-0.31.0 (qiskit-terra-0.18.3). We include the qiskit.circuit package and some related packages in SpinQit. Therefore, you can construct a Qiskit QuantumCircuit instance and run it with SpinQit, even without installing Qiskit. In particular, SpinQit supports the QFT, QPE, and Grover primitives in Qiskit (in spinqit.qiskit.circuit.library), so you can build quantum algorithms based on these primitives. Nevertheless, SpinQit does not include all Qiskit code. If you want to use the qiskit.algorithm package and run the circuit on SpinQit backends, you still need to install Qiskit.
+SpinQit also supports the IBM Qiskit Python interface. The version supported inside SpinQit is qiskit-0.31.0 (qiskit-terra-0.18.3). We include the qiskit.circuit package and some related packages in SpinQit. Therefore, you can construct a Qiskit QuantumCircuit instance and run it with SpinQit, even without installing Qiskit. In particular, SpinQit supports the QFT, QPE, and Grover primitives in Qiskit (in spinqit.qiskit.circuit.library), so you can build quantum algorithms based on these primitives. Nevertheless, SpinQit does not include all Qiskit code. If you want to use the qiskit.algorithm package and run the circuit on SpinQit backends, you still need to install Qiskit.
+
+We have developed **spinq-qiskitv2-linker**, an extension package that serves as an adapter for running programs written using Qiskit 2.0 on SpinQit backends. The package translates `qiskit.QuantumCircuit` objects into SpinQit circuits, executes them on a SpinQit backend, and returns results in Qiskit primitive V2 result containers. It is designed for workflows that expect Qiskit `SamplerV2` or `EstimatorV2` objects, including experiments using `qiskit-machine-learning` and `qiskit-optimization`. The package is available upon request; please contact us for access.
 
 ```python
 from spinqit.qiskit.circuit import QuantumCircuit
@@ -353,7 +355,7 @@ backend = get_spinq_cloud(
 )
 ```
 ![SSH.PNG](SSH.PNG)
-SpinQ provides multiple platforms with different numbers of qubits on SpinQ's online experimental platform. The cloud backend has a `get_platform` method, which returns a platform instance for one of `"gemini_vp"`, `"triangulum_vp"`, or `"sqc_25_vp"`. These platforms have 2, 3, and 25 qubits, respectively, and support quantum programs with up to the corresponding number of qubits.
+SpinQ provides multiple platforms with different numbers of qubits on SpinQ's online experimental platform. The cloud backend has a `get_platform` method, which returns a platform instance for one of `"gemini_vp"`, `"triangulum_vp"`, `"sqc_25_vp"` and `"simulator"`. These platforms have 2, 3, 25 and 25 qubits, respectively, and support quantum programs with up to the corresponding number of qubits.
 
 The cloud backend returns a `SpinQCloudResult` object. Its `probabilities` property contains a dictionary whose keys are binary measurement results and whose values are the corresponding probabilities. Its `counts` property contains shot counts when they are returned by the cloud platform; otherwise, counts can be derived from the probabilities and the configured number of shots. If shots are not configured, the default is 1024.
 

@@ -29,7 +29,7 @@ from ..model.spinqCloud.circuit import topological_sort_by_dfs
 from ..model import H, X, Y, Z, Rx, Ry, Rz, P, T, S, Td, Sd, SWAP, CX, CY, CZ, CCX, MEASURE, StateVector
 from ..model.exceptions import CircuitOperationValidationError, RequestTimeoutError, RoutingError, TaskStatusError
 from ..compiler.ir import IntermediateRepresentation, NodeType
-from .backend_util import _basis_rotation_ir, lazy_property
+from .backend_util import _basis_rotation_ir, lazy_property, _substitute_native_u_callee
 from ..utils.function import requires_grad
 from ..primitive import PauliBuilder, calculate_pauli_expectation, pauli_decompose
 
@@ -113,6 +113,52 @@ class SCBackend(BaseBackend):
                     raise Exception('Current backend does not support conditional gates.')
                 if v['name'] in [MEASURE.label, StateVector.label]: #, CCX.label]:
                     raise CircuitOperationValidationError("Current backend does not support " + v['name'] + " gate.")
+                elif v['name'] == U.label:
+                    edges = v.in_edges()
+                    qubits = []
+                    clbits = []
+                    for e in edges:
+                        if 'qubit' in e.attributes() and e['qubit'] is not None:
+                            qubits.append(e['qubit'])
+                        elif 'clbit' in e.attributes() and e['clbit'] is not None:
+                            clbits.append(e['clbit'])
+                    subgates = []
+                    if v['type'] == NodeType.op.value:
+                        subgates.append(Instruction(Rz, qubits, clbits, v['params'][2]))
+                        subgates.append(Instruction(Ry, qubits, clbits, v['params'][0]))
+                        subgates.append(Instruction(Rz, qubits, clbits, v['params'][1]))
+                        ir.substitute_nodes([v.index], subgates, v['type'])
+                        ir.remove_nodes([v.index], False)
+                    elif len(v["params"]) == 1 and v["pindex"] == [-1]:
+                        factors = (
+                            (Rz, [0], lambda angles: angles[2]),
+                            (Ry, [0], lambda angles: angles[0]),
+                            (Rz, [0], lambda angles: angles[1]),
+                        )
+                        _substitute_native_u_callee(ir, v, qubits, clbits, factors)
+                    else:
+                        pindex_group = []
+                        var_full = v['pindex']
+                        start = 0
+                        for func in v['params']:
+                            arg_count = func.__code__.co_argcount
+                            var_slice = [] if arg_count == 0 else var_full[start:start + arg_count]
+                            pindex_group.append(var_slice)
+                            start += arg_count
+
+                        subgates.append(Instruction(Rz, qubits, clbits, v['params'][2]))
+                        subgates.append(Instruction(Ry, qubits, clbits, v['params'][0]))
+                        subgates.append(Instruction(Rz, qubits, clbits, v['params'][1]))
+                        new_nodes = ir.substitute_nodes([v.index], subgates, v['type'])
+
+                        nv1 = ir.dag.vs[new_nodes[0]]
+                        nv1['pindex'] = pindex_group[2]
+                        nv2 = ir.dag.vs[new_nodes[1]]
+                        nv2['pindex'] = pindex_group[0]
+                        nv3 = ir.dag.vs[new_nodes[2]]
+                        nv3['pindex'] = pindex_group[1]
+                        ir.remove_nodes([v.index], False)
+                    i -= 1
                 elif v['name'] == X.label:
                     v['name'] = Rx.label
                     v['params'] = [pi]
@@ -365,9 +411,7 @@ class SCBackend(BaseBackend):
         
         if measure_op.mtype == 'expval':
             hamiltonian = measure_op.hamiltonian
-            if isinstance(hamiltonian, (onp.ndarray, sparse.csr_matrix)):
-                if isinstance(hamiltonian, sparse.csr_matrix):
-                    hamiltonian = hamiltonian.A
+            if isinstance(hamiltonian, onp.ndarray) or sparse.issparse(hamiltonian):
                 hamiltonian = pauli_decompose(hamiltonian)
             value = 0.0
             mqubits = config.metadata['mqubits'] if 'mqubits' in config.metadata else list(range(ir.qnum))

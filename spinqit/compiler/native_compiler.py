@@ -13,10 +13,11 @@
 # limitations under the License.
 from typing import Tuple
 from spinqit.compiler.compiler import Compiler
-from spinqit.model import X, Y, Z, CX, CY, CZ, CCX
+from spinqit.model import X, Y, Z, U, CX, CY, CZ, CCX
 from spinqit.model import Gate, Circuit, MatrixGate, ControlledGate, InverseGate, MultiControlledMatrixGate
 from spinqit.model import UnsupportedGateError
 from spinqit.model.instruction import Instruction
+from spinqit.model.parameter import LazyParameter
 from .ir import IntermediateRepresentation as IR, NodeType
 from .translator.gate_converter import is_primary_gate, decompose_single_qubit_gate, decompose_multi_qubit_gate
 from .optimizer import PassManager
@@ -53,7 +54,12 @@ class NativeCompiler(Compiler):
     def handle_primary_gate(self, ir: IR, inst: Instruction, condition: Tuple):
         gate = inst.gate
         if gate in IR.basis_set or gate.label in IR.label_set:
-            vindex = ir.add_op_node(inst.get_op(), inst.params, inst.qubits, inst.clbits)
+            params = inst.params
+            if gate.label == U.label and len(params) == 1:
+                angles = params[0]
+                if isinstance(angles, LazyParameter) and angles.shape == (3,):
+                    params = [angles[0], angles[1], angles[2]]
+            vindex = ir.add_op_node(inst.get_op(), params, inst.qubits, inst.clbits)
             if condition != None:
                 ir.add_node_condition(vindex, condition[0], condition[1], condition[2])
         elif isinstance(gate, MatrixGate):

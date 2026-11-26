@@ -100,7 +100,7 @@ class SpinQCloudResult:
 class SpinQCloudBackend:
     MAX_RETRIES = 3
 
-    def __init__(self, username: str, keyfile: str, host:str):
+    def __init__(self, username: str, keyfile: str, host: str = "http://cloud.spinq.cn:6060"):
         message = username.encode(encoding="utf-8")
         with open(keyfile) as f:
             key = f.read()
@@ -109,7 +109,6 @@ class SpinQCloudBackend:
         signer = Signature_pkcs1_v1_5.new(rsakey)
         digest = SHA256.new()
         digest.update(message)
-        # printable = digest.hexdigest()
         sign = signer.sign(digest)
         signature = base64.b64encode(sign)
         signature = str(signature, encoding = "utf-8")
@@ -223,10 +222,7 @@ class SpinQCloudBackend:
                     else:
                         raise CircuitOperationValidationError("Current platform does not support " + v['name'] + " gate.")
                 elif v['name'] == P.label:
-                    if platform_code in [Gemini.code, Triangulum.code, Superconductor.code, SQC_25.code]:
-                        v['name'] = Rz.label
-                    else:
-                        raise CircuitOperationValidationError("Current platform does not support " + v['name'] + " gate.")
+                    v['name'] = Rz.label
                 elif v['name'] == T.label and platform_code in [Gemini.code, SQC_25.code]:
                     v['name'] = Rz.label
                     v['params'] = [pi/4]  
@@ -256,6 +252,15 @@ class SpinQCloudBackend:
             i += 1
 
     def refresh_remote_platforms(self):
+        """Refresh cloud platform metadata, including its system type.
+
+        Last updated: 2026-10-12 - Preserve the API system field for selecting
+        an appropriate task-result polling interval.
+        Args:
+            None.
+        Returns:
+            None: Replaces the backend's cached platform list.
+        """
         res = self._platforms = self._api_client.retrieve_remote_platforms()
         if res:
             res_entity = json.loads(res.content)
@@ -290,7 +295,7 @@ class SpinQCloudBackend:
                     # print(p)
                 '''
                 simu = p["simu"] if "simu" in p else False    
-                self._platforms.append(Platform(p["pcode"], p["pname"], p["maxBitNum"], p["countOnlineMachine"], gate_list, coupling_map, simu, active_qubits))
+                self._platforms.append(Platform(p["pcode"], p["pname"], p["maxBitNum"], p["countOnlineMachine"], gate_list, coupling_map, simu, active_qubits, p.get("system")))
         else:
             raise SpinQCloudServerError("Error occurs when retrieving platforms on cloud.")
 
@@ -396,9 +401,16 @@ class SpinQCloudBackend:
             raise SpinQCloudServerError(f'Get task failed: status code = {res_entity["status"]}. Message = {res_entity["msg"]}')
             
     def execute(self, ir, config: SpinQCloudConfig):
-        '''
-        We do not process density matrix for now. This execute method is synchronous and there must be a result.
-        '''
+        """Submit one circuit and synchronously return its cloud result.
+
+        Last updated: 2026-10-12 - Use short result polling except for NMR
+        platforms, which retain their five-second polling interval.
+        Args:
+            ir (IntermediateRepresentation): Compiled circuit to execute.
+            config (SpinQCloudConfig): Cloud platform and task settings.
+        Returns:
+            SpinQCloudResult: Completed cloud task result, when available.
+        """
         for i in range(SpinQCloudBackend.MAX_RETRIES):
             try:
                 status, msg, task_code = self.submit_task(ir, config)
@@ -420,7 +432,9 @@ class SpinQCloudBackend:
                     raise SpinQCloudServerError('Max retries exceeded. Execution failed.')        
         if status == 200 or status == 202:
             print(f'Task {task_code} has been submitted successfully. Please wait for processing.')
-            result = self.get_task_result(task_code)
+            platform = self.get_platform(config.metadata['platform'])
+            poll_interval = 5.0 if str(platform.system).lower() == 'nmr' else 0.1
+            result = self.get_task_result(task_code, poll_interval=poll_interval)
             return result
         elif status == 226:
             print(f'Task {task_code} has been submitted and saved successfully, but no machine online now. Please try again to execute it later.')
@@ -429,7 +443,19 @@ class SpinQCloudBackend:
         else:
             raise SpinQCloudServerError(f'Task submission failed: status code = {status}. Message = {msg}')
 
-    def get_task_result(self, task_code: str, filter_str:str = None, hanging:bool = True, timeout:Optional[int] = None):
+    def get_task_result(self, task_code: str, filter_str:str = None, hanging:bool = True, timeout:Optional[int] = None, poll_interval: float = 0.1):
+        """Poll the cloud service until a task reaches a terminal state.
+
+        Last updated: 2026-10-12 - Accept a caller-selected polling interval.
+        Args:
+            task_code (str): Submitted cloud task identifier.
+            filter_str (str): Optional result filter.
+            hanging (bool): Whether pending tasks should continue polling.
+            timeout (int): Optional timeout in seconds.
+            poll_interval (float): Seconds to wait between pending-result polls.
+        Returns:
+            SpinQCloudResult | None: Completed result, or None for failed tasks.
+        """
         start_time = datetime.now()
         if timeout is not None:
             end_time = start_time + timedelta(seconds=timeout)
@@ -457,7 +483,7 @@ class SpinQCloudBackend:
                 raise eo
             except TaskStatusError as eo:
                 if hanging:
-                    time.sleep(5)
+                    time.sleep(poll_interval)
                     continue
                 else:
                     raise eo
@@ -518,9 +544,7 @@ class SpinQCloudBackend:
 
         if measure_op.mtype == 'expval':
             hamiltonian = measure_op.hamiltonian
-            if isinstance(hamiltonian, (onp.ndarray, sparse.csr_matrix)):
-                if isinstance(hamiltonian, sparse.csr_matrix):
-                    hamiltonian = hamiltonian.A
+            if isinstance(hamiltonian, onp.ndarray) or sparse.issparse(hamiltonian):
                 hamiltonian = pauli_decompose(hamiltonian)
             value = 0.0
             mqubits = config.metadata['mqubits'] if 'mqubits' in config.metadata else list(range(ir.qnum))

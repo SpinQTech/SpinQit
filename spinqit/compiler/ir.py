@@ -38,7 +38,7 @@ class Comparator(enum.Enum):
     GE = 5
 
 class IntermediateRepresentation():
-    basis_set = {I, H, X, Y, Z, Rx, Ry, Rz, T, Td, S, Sd, P, CX, CY, CZ, SWAP, CCX, MEASURE, StateVector}
+    basis_set = {I, H, X, Y, Z, Rx, Ry, Rz, T, Td, S, Sd, P, U, CX, CY, CZ, SWAP, CCX, MEASURE, StateVector}
     label_set = {g.label for g in basis_set}
     basis_map = {}
     for gate in basis_set:

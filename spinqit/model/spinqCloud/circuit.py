@@ -162,20 +162,20 @@ def _vertex_to_circuit_operation(circuitboard, name, qubits, arguments) -> Circu
             else:
                 row.append('|')
         return  CircuitOperation(largest_slot+1, gate, True, qubits, arguments)
-    # elif gate.gtag == "U1":
-    #     # U(theta, phi, lambda) to Rz(phi)Ry(theta)Rz(lambda)
-    #     circuitboard[qubits[0]].append(gate.gname)
-    #     # convert to our operation structure
-    #     theta = round (float(math.degrees(arguments[0])), 1)
-    #     phi = round (float(math.degrees(arguments[1])), 1)
-    #     lam = round (float(math.degrees(arguments[2])), 1)
-    #     qubits = [qubits[0]+1]
-    #     arguments = [theta, phi, lam]
-    #     return  CircuitOperation(len(circuitboard[qubits[0]-1]), gate, True, qubits, arguments)
+    elif gate.gtag == "U1":
+        # U(theta, phi, lambda) to Rz(phi)Ry(theta)Rz(lambda)
+        circuitboard[qubits[0]].append(gate.gname)
+        # convert to our operation structure
+        theta = round(math.degrees(arguments[0]), 2) % 720.0
+        phi = round(math.degrees(arguments[1]), 2) % 720.0
+        lam = round(math.degrees(arguments[2]), 2) % 720.0
+        qubits = [qubits[0]+1]
+        arguments = [theta, phi, lam]
+        return  CircuitOperation(len(circuitboard[qubits[0]-1]), gate, True, qubits, arguments)
     elif gate.gtag == "R1":
         # convert to our operation structure
-        degree = float(math.degrees(arguments[0])) if float(math.degrees(arguments[0])) > 0 else float(math.degrees(arguments[0])) + 360
-        degree = round (degree, 2)
+        radians = arguments[0] % (4 * math.pi)
+        degree = round(math.degrees(radians), 2) % 720.0
         circuitboard[qubits[0]].append(gate.gname + " " + str(degree))
         qubits = [qubits[0]+1]
         arguments = [degree]
@@ -193,19 +193,33 @@ customized_op = {}
 def _transfer_qubits(global_qlist, local_qlist):
     return [global_qlist[x] for x in local_qlist]
 
-def _dfs(root_index: int, graph: Graph, visited: Set, result: List):
-    successors = graph.neighbors(root_index, mode='out')
-    for s in successors:
-        if not s in visited:
-            _dfs(s, graph, visited, result)
-    result.append(root_index)
-    visited.add(root_index)
-
 def topological_sort_by_dfs(roots: List[int], graph: Graph):
-    visited = set()
+    finished = set()
+    active = set()
     result = []
-    for vidx in roots:
-        _dfs(vidx, graph, visited, result)
+
+    for root in roots:
+        if root in finished:
+            continue
+
+        active.add(root)
+        stack = [(root, iter(graph.neighbors(root, mode="OUT")))]
+
+        while stack:
+            vertex, successors = stack[-1]
+            child = next(successors, None)
+
+            if child is None:
+                stack.pop()
+                active.remove(vertex)
+                finished.add(vertex)
+                result.append(vertex)
+            elif child in active:
+                raise ValueError(f"Cycle detected on edge {vertex} -> {child}.")
+            elif child not in finished:
+                active.add(child)
+                stack.append((child, iter(graph.neighbors(child, mode="OUT"))))
+
     return result[::-1]
 
 def _expand_customized_gate(def_name: str, g: Graph):
